@@ -70,6 +70,62 @@ class BoardInspectionResult(TypedDict):
     visual_output_path: Optional[str]     # 最终合成质检标注图路径
 
 
+def _attach_top_banner_hud(
+    vis_img: np.ndarray,
+    mode_title: str,
+    status: str,
+    metrics_text: str,
+    banner_h: int = 52,
+) -> np.ndarray:
+    """
+    🌟 在图像上方开辟专属空白仪表板 (Top Banner HUD)，实现对原始图像 0 遮挡：
+    - 在图像上方扩展高度为 banner_h 的深灰色仪表带；
+    - 左侧配置红/绿状态胶囊标签 (PASS / NG Badge)；
+    - 中间显示当前质检维度与指标数值；
+    - 底部搭配 2px 分割边线，外观精致整洁。
+    """
+    h_orig, w_orig = vis_img.shape[:2]
+    canvas = cv2.copyMakeBorder(
+        vis_img, banner_h, 0, 0, 0, cv2.BORDER_CONSTANT, value=(30, 30, 30)
+    )
+    is_ng = (status == "NG")
+    badge_bg = (0, 0, 220) if is_ng else (0, 180, 0)
+    line_color = (0, 0, 200) if is_ng else (0, 180, 0)
+
+    if w_orig >= 650:
+        # 宽图 (> 650px): 单行流线型布局
+        badge_w, badge_h = 75, 26
+        bx, by = 15, 13
+        cv2.rectangle(canvas, (bx, by), (bx + badge_w, by + badge_h), badge_bg, -1)
+        cv2.putText(canvas, status, (bx + (16 if is_ng else 10), by + 19),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 2, cv2.LINE_AA)
+
+        cv2.putText(canvas, mode_title, (bx + badge_w + 15, by + 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (210, 210, 210), 1, cv2.LINE_AA)
+
+        cv2.line(canvas, (bx + badge_w + 175, by + 4), (bx + badge_w + 175, by + badge_h - 4), (80, 80, 80), 1)
+
+        cv2.putText(canvas, metrics_text, (bx + badge_w + 190, by + 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (240, 240, 240), 1, cv2.LINE_AA)
+    else:
+        # 窄图 (<= 650px): 紧凑两行布局，自适应不溢出
+        badge_w, badge_h = 60, 20
+        bx, by = 10, 6
+        cv2.rectangle(canvas, (bx, by), (bx + badge_w, by + badge_h), badge_bg, -1)
+        cv2.putText(canvas, status, (bx + (13 if is_ng else 8), by + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA)
+
+        cv2.putText(canvas, mode_title, (bx + badge_w + 12, by + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 210, 210), 1, cv2.LINE_AA)
+
+        cv2.putText(canvas, metrics_text, (10, 42),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (230, 230, 230), 1, cv2.LINE_AA)
+
+    # 顶部 Banner 与原始图像之间的精致分界线
+    cv2.line(canvas, (0, banner_h - 1), (w_orig, banner_h - 1), line_color, 2)
+    return canvas
+
+
 # ==============================================================
 # ================= 🌟 [核心质检功能 1: 仅气泡质检] =============
 # ==============================================================
@@ -153,14 +209,9 @@ def inspect_bga_void(
                 vr_px = max(1, int(round(vc["radius"])))
                 cv2.circle(vis_img, (vcx, vcy), vr_px, v_color, 1)
 
-        # 绘制顶部 HUD 看板 (气泡专用)
-        hud_color = (0, 0, 255) if board_status == "NG" else (0, 200, 0)
-        cv2.rectangle(vis_img, (10, 10), (430, 75), (40, 40, 40), -1)
-        cv2.rectangle(vis_img, (10, 10), (430, 75), hud_color, 2)
-        cv2.putText(vis_img, f"[VOID ONLY] STATUS: {board_status}", (20, 36),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.72, hud_color, 2, cv2.LINE_AA)
-        cv2.putText(vis_img, f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Max-Rate: {max_void_rate*100:.1f}%", 
-                    (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (220, 220, 220), 1, cv2.LINE_AA)
+        # 在图像上方开辟专属空白状态栏，彻底消除对原始图像的遮挡
+        metrics_text = f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Max-Void: {max_void_rate*100:.1f}%"
+        vis_img = _attach_top_banner_hud(vis_img, "VOID ONLY", board_status, metrics_text)
 
         if debug_output_dir is None:
             debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "void_only")
@@ -276,14 +327,9 @@ def inspect_bga_bridge(
             cv2.putText(vis_img, "BRIDGE", (rx, max(12, ry - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_BRIDGE_BOX, 1, cv2.LINE_AA)
 
-        # C. 绘制顶部 HUD 看板 (桥连专用)
-        hud_color = (0, 0, 255) if board_status == "NG" else (0, 200, 0)
-        cv2.rectangle(vis_img, (10, 10), (430, 75), (40, 40, 40), -1)
-        cv2.rectangle(vis_img, (10, 10), (430, 75), hud_color, 2)
-        cv2.putText(vis_img, f"[BRIDGE ONLY] STATUS: {board_status}", (20, 36),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.72, hud_color, 2, cv2.LINE_AA)
-        cv2.putText(vis_img, f"Solders: {len(solder_points)} | Bridge Defects: {bridge_count}", 
-                    (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (220, 220, 220), 1, cv2.LINE_AA)
+        # 在图像上方开辟专属空白状态栏，彻底消除对原始图像的遮挡
+        metrics_text = f"Solders: {len(solder_points)} | Bridges: {bridge_count}"
+        vis_img = _attach_top_banner_hud(vis_img, "BRIDGE ONLY", board_status, metrics_text)
 
         if debug_output_dir is None:
             debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "bridge_only")
@@ -423,13 +469,9 @@ def inspect_bga_comprehensive(
             cv2.putText(vis_img, "BRIDGE", (rx, max(12, ry - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_BRIDGE_BOX, 1, cv2.LINE_AA)
 
-        hud_color = (0, 0, 255) if board_status == "NG" else (0, 200, 0)
-        cv2.rectangle(vis_img, (10, 10), (450, 75), (40, 40, 40), -1)
-        cv2.rectangle(vis_img, (10, 10), (450, 75), hud_color, 2)
-        cv2.putText(vis_img, f"[COMPREHENSIVE] STATUS: {board_status}", (20, 36),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.72, hud_color, 2, cv2.LINE_AA)
-        cv2.putText(vis_img, f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Bridges: {bridge_count}", 
-                    (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (220, 220, 220), 1, cv2.LINE_AA)
+        # 在图像上方开辟专属空白状态栏，彻底消除对原始图像的遮挡
+        metrics_text = f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Bridges: {bridge_count} | Max-Void: {max_void_rate*100:.1f}%"
+        vis_img = _attach_top_banner_hud(vis_img, "COMPREHENSIVE", board_status, metrics_text)
 
         if debug_output_dir is None:
             debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "comprehensive")
