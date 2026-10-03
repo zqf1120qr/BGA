@@ -2,10 +2,11 @@
 """
 🌟 BGA 一体化工业质检流水线系统 (BGA Inspection Pipeline)
 -------------------------------------------------------------
-支持三种清晰独立的质检维度 (模式)：
-1. 气泡质检 (Void Only)         : inspect_bga_void()
-2. 桥连质检 (Bridge Only)       : inspect_bga_bridge()
-3. 综合质检 (Comprehensive / All): inspect_bga_comprehensive() [或 inspect_bga()]
+支持四种清晰独立的质检维度 (模式)：
+1. 气泡质检 (Void Only)             : inspect_bga_void()
+2. 桥连质检 (Bridge Only)           : inspect_bga_bridge()
+3. 虚焊质检 (Insufficient Only)     : inspect_bga_insufficient()
+4. 综合质检 (Comprehensive / All)    : inspect_bga_comprehensive() [或 inspect_bga()]
 """
 from __future__ import annotations
 
@@ -49,6 +50,15 @@ from bga_bridge_detect import (
     COLOR_BRIDGE_BOX,
     COLOR_BRIDGE_BALL,
 )
+from bga_insufficient_detect import (
+    InsufficientSolderDefect,
+    SolderAreaStats,
+    detect_insufficient_solders,
+    draw_insufficient_defects,
+    COLOR_INSUFFICIENT_BOX,
+    COLOR_INSUFFICIENT_RING,
+    COLOR_INSUFFICIENT_TEXT,
+)
 
 
 # ==============================================================
@@ -57,17 +67,19 @@ from bga_bridge_detect import (
 class InspectionMode(str, Enum):
     VOID = "void"                   # 仅气泡检测
     BRIDGE = "bridge"               # 仅桥连检测
-    COMPREHENSIVE = "comprehensive" # 全项综合检测 (气泡 + 桥连)
+    INSUFFICIENT = "insufficient"   # 仅虚焊检测 (面积比平均值小)
+    COMPREHENSIVE = "comprehensive" # 全项综合检测 (气泡 + 桥连 + 虚焊)
 
 
 class BoardInspectionResult(TypedDict):
-    mode: str                             # 质检模式: "void" | "bridge" | "comprehensive"
-    board_status: str                     # 整板判定: "PASS" 或 "NG"
-    ng_reasons: List[str]                 # 不合格原因列表
-    summary: Dict[str, Any]               # 汇总统计数据
-    void_details: List[PredictionResult]  # 各焊球气泡详细信息 (仅气泡/综合模式提供)
-    bridge_details: List[BridgeDefect]    # 桥连缺陷详细信息 (仅桥连/综合模式提供)
-    visual_output_path: Optional[str]     # 最终合成质检标注图路径
+    mode: str                                             # 质检模式: "void" | "bridge" | "insufficient" | "comprehensive"
+    board_status: str                                     # 整板判定: "PASS" 或 "NG"
+    ng_reasons: List[str]                                 # 不合格原因列表
+    summary: Dict[str, Any]                               # 汇总统计数据
+    void_details: List[PredictionResult]                  # 各焊球气泡详细信息 (仅气泡/综合模式提供)
+    bridge_details: List[BridgeDefect]                    # 桥连缺陷详细信息 (仅桥连/综合模式提供)
+    insufficient_details: List[InsufficientSolderDefect]  # 虚焊缺陷详细信息 (仅虚焊/综合模式提供)
+    visual_output_path: Optional[str]                     # 最终合成质检标注图路径
 
 
 def _attach_top_banner_hud(
@@ -92,8 +104,8 @@ def _attach_top_banner_hud(
     badge_bg = (0, 0, 220) if is_ng else (0, 180, 0)
     line_color = (0, 0, 200) if is_ng else (0, 180, 0)
 
-    if w_orig >= 650:
-        # 宽图 (> 650px): 单行流线型布局
+    if w_orig >= 760:
+        # 宽图 (> 760px): 单行流线型布局
         badge_w, badge_h = 75, 26
         bx, by = 15, 13
         cv2.rectangle(canvas, (bx, by), (bx + badge_w, by + badge_h), badge_bg, -1)
@@ -101,14 +113,16 @@ def _attach_top_banner_hud(
                     cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 2, cv2.LINE_AA)
 
         cv2.putText(canvas, mode_title, (bx + badge_w + 15, by + 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (210, 210, 210), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.46, (210, 210, 210), 1, cv2.LINE_AA)
 
-        cv2.line(canvas, (bx + badge_w + 175, by + 4), (bx + badge_w + 175, by + badge_h - 4), (80, 80, 80), 1)
+        div_x = bx + badge_w + 175
+        cv2.line(canvas, (div_x, by + 4), (div_x, by + badge_h - 4), (80, 80, 80), 1)
 
-        cv2.putText(canvas, metrics_text, (bx + badge_w + 190, by + 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (240, 240, 240), 1, cv2.LINE_AA)
+        font_scale = 0.40 if len(metrics_text) > 55 else 0.44
+        cv2.putText(canvas, metrics_text, (div_x + 15, by + 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (240, 240, 240), 1, cv2.LINE_AA)
     else:
-        # 窄图 (<= 650px): 紧凑两行布局，自适应不溢出
+        # 中窄图 (<= 760px): 紧凑两行布局，自适应不溢出
         badge_w, badge_h = 60, 20
         bx, by = 10, 6
         cv2.rectangle(canvas, (bx, by), (bx + badge_w, by + badge_h), badge_bg, -1)
@@ -118,8 +132,9 @@ def _attach_top_banner_hud(
         cv2.putText(canvas, mode_title, (bx + badge_w + 12, by + 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 210, 210), 1, cv2.LINE_AA)
 
+        font_scale = 0.36 if len(metrics_text) > 58 else 0.38
         cv2.putText(canvas, metrics_text, (10, 42),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (230, 230, 230), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (230, 230, 230), 1, cv2.LINE_AA)
 
     # 顶部 Banner 与原始图像之间的精致分界线
     cv2.line(canvas, (0, banner_h - 1), (w_orig, banner_h - 1), line_color, 2)
@@ -227,6 +242,7 @@ def inspect_bga_void(
         "summary": summary,
         "void_details": void_results,
         "bridge_details": [],
+        "insufficient_details": [],
         "visual_output_path": out_vis_path,
     }
 
@@ -345,28 +361,30 @@ def inspect_bga_bridge(
         "summary": summary,
         "void_details": [],
         "bridge_details": bridge_defects,
+        "insufficient_details": [],
         "visual_output_path": out_vis_path,
     }
 
 
 # ==============================================================
-# ================= 🌟 [核心质检功能 3: 全项综合质检] ===========
 # ==============================================================
-def inspect_bga_comprehensive(
+# ================= 🌟 [核心质检功能 3: 仅虚焊/少锡质检] =======
+# ==============================================================
+def inspect_bga_insufficient(
     input_image_path: str,
     weights_path: str,
     conf_threshold: Optional[float] = None,
-    ng_void_threshold: float = 0.25,     # 气泡超标门槛 (默认 25%)
+    undersize_threshold: float = 0.20,     # 面积比基准小 20% 以上判为虚焊 (默认 20%)
+    reference_mode: str = "mean",          # 基准模式: "mean" (算术均值) 或 "median" (稳健中位数)
     device: str = "0",
     save_debug_image: bool = True,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
-    🔍 功能三：BGA 全项【气泡 + 桥连】综合质检 (Comprehensive Inspection)
-    - 一站式同步执行焊球定位、气泡空洞率分割与球间桥连检测；
-    - 算力高效复用：YOLO 目标检测仅推理 1 次；
-    - 整板双重判定：气泡率超标 OR 存在桥连短路缺陷，整板直接判定为 NG；
-    - 多图层全景可视化：绿圈焊球 + 红/黄气泡圈 + 红框桥连 + 黄圈小锡球 + 工业 HUD 看板。
+    🔍 功能三：BGA 焊球【仅虚焊/少锡】质检 (Insufficient Solder Only Inspection)
+    - 快速定位焊球并提取亚像素真实物理收缩半径与面积；
+    - 计算整板焊球基准面积 (支持均值/中位数)，计算面积比率；
+    - 整板判定标准：整板存在 0 处虚焊则 PASS，存在任何焊球面积比均值小超过 undersize_threshold 则判 NG。
     """
     t_start = time.time()
     if not os.path.exists(input_image_path):
@@ -377,7 +395,117 @@ def inspect_bga_comprehensive(
         raise ValueError(f"无法读取图片数据: {input_image_path}")
     vis_img = img.copy() if save_debug_image else None
 
-    # 1. 气泡与焊球检测
+    # 1. 快速定位焊点并经由亚像素梯度通量精修真实半径
+    void_results: List[PredictionResult] = predict_and_generate_mask(
+        model=weights_path,
+        input_image_path=input_image_path,
+        conf_threshold=conf_threshold,
+        device=device,
+        save_debug_image=False,
+    )
+
+    # 2. 虚焊缺陷巡检 (统计基准均值与相对缩小百分比)
+    insufficient_defects, area_stats = detect_insufficient_solders(
+        solder_points=void_results,
+        undersize_threshold=undersize_threshold,
+        reference_mode=reference_mode,
+    )
+
+    ng_reasons: List[str] = []
+    insufficient_count = len(insufficient_defects)
+    for defect in insufficient_defects:
+        cx, cy = defect["center"]
+        ng_reasons.append(
+            f"焊球 #{defect['solder_index']} ({cx:.0f},{cy:.0f}) 面积严重偏小 (虚焊/少锡): "
+            f"{defect['area']:.1f}px² < 均值 {defect['reference_area']:.1f}px² (缩小 -{defect['reduction_percent']:.1f}%)"
+        )
+
+    board_status = "NG" if insufficient_count > 0 else "PASS"
+
+    summary: Dict[str, Any] = {
+        "mode": InspectionMode.INSUFFICIENT.value,
+        "board_status": board_status,
+        "solder_count": len(void_results),
+        "void_pass_count": len(void_results),
+        "void_ng_count": 0,
+        "max_void_rate": 0.0,
+        "bridge_defect_count": 0,
+        "insufficient_solder_count": insufficient_count,
+        "mean_solder_area": area_stats["mean_area"],
+        "median_solder_area": area_stats["median_area"],
+        "max_reduction_percent": round(max([d["reduction_percent"] for d in insufficient_defects], default=0.0), 1),
+        "elapsed_ms": round((time.time() - t_start) * 1000, 1),
+    }
+
+    out_vis_path = None
+    if save_debug_image and vis_img is not None:
+        # A. 绘制常规焊球轮廓 (绿色)
+        for v in void_results:
+            sc = v["solder_circle"]
+            cx, cy = int(round(sc["center"][0])), int(round(sc["center"][1]))
+            r = int(round(sc["radius"]))
+            cv2.circle(vis_img, (cx, cy), r, COLOR_SOLDER, 1)
+
+        # B. 绘制虚焊缺陷 (橙色双圈 + 矩形框 + 缩减百分比)
+        vis_img = draw_insufficient_defects(vis_img, insufficient_defects, draw_box=True, draw_label=True)
+
+        # C. 顶部 Banner HUD 看板 (0 遮挡)
+        metrics_text = (
+            f"Solders: {len(void_results)} | Undersize-NG: {insufficient_count} | "
+            f"Mean-Area: {area_stats['mean_area']:.0f}px² | Max-Red: {summary['max_reduction_percent']:.1f}%"
+        )
+        vis_img = _attach_top_banner_hud(vis_img, "UNDERSIZE ONLY", board_status, metrics_text)
+
+        if debug_output_dir is None:
+            debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "insufficient_only")
+        os.makedirs(debug_output_dir, exist_ok=True)
+        base_stem = os.path.splitext(os.path.basename(input_image_path))[0]
+        out_vis_path = os.path.join(debug_output_dir, f"{base_stem}_insufficient_inspected.jpg")
+        cv2.imencode(".jpg", vis_img)[1].tofile(out_vis_path)
+
+    return {
+        "mode": InspectionMode.INSUFFICIENT.value,
+        "board_status": board_status,
+        "ng_reasons": ng_reasons,
+        "summary": summary,
+        "void_details": [],
+        "bridge_details": [],
+        "insufficient_details": insufficient_defects,
+        "visual_output_path": out_vis_path,
+    }
+
+
+# ==============================================================
+# ================= 🌟 [核心质检功能 4: 全项综合质检] ===========
+# ==============================================================
+def inspect_bga_comprehensive(
+    input_image_path: str,
+    weights_path: str,
+    conf_threshold: Optional[float] = None,
+    ng_void_threshold: float = 0.25,     # 气泡超标门槛 (默认 25%)
+    undersize_threshold: float = 0.20,   # 虚焊面积缩减门槛 (默认 20%)
+    area_reference_mode: str = "mean",    # 虚焊基准模式: "mean" 或 "median"
+    device: str = "0",
+    save_debug_image: bool = True,
+    debug_output_dir: Optional[str] = None,
+) -> BoardInspectionResult:
+    """
+    🔍 功能四：BGA 全项【气泡 + 桥连 + 虚焊】综合质检 (Comprehensive Inspection)
+    - 一站式同步执行焊球定位、气泡空洞率分割、球间桥连检测与虚焊面积巡检；
+    - 算力高效复用：YOLO 目标检测仅推理 1 次；
+    - 整板三重综合判定：气泡率超标 OR 存在桥连短路缺陷 OR 焊球面积严重偏小 (虚焊)，直接判定为 NG；
+    - 多图层全景可视化：绿圈焊球 + 红/黄气泡圈 + 红框桥连 + 橙框/双圈虚焊 + 工业 HUD 看板。
+    """
+    t_start = time.time()
+    if not os.path.exists(input_image_path):
+        raise FileNotFoundError(f"未找到输入图片: {input_image_path}")
+
+    img = cv2.imdecode(np.fromfile(input_image_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(f"无法读取图片数据: {input_image_path}")
+    vis_img = img.copy() if save_debug_image else None
+
+    # 1. 气泡与焊球定位 (内部高精度亚像素拟合真实收缩半径)
     void_results: List[PredictionResult] = predict_and_generate_mask(
         model=weights_path,
         input_image_path=input_image_path,
@@ -387,7 +515,7 @@ def inspect_bga_comprehensive(
         save_debug_image=False,
     )
 
-    # 2. 桥连检测
+    # 2. 桥连缺陷巡检
     solder_points = []
     for idx, v_item in enumerate(void_results):
         sc = v_item["solder_circle"]
@@ -407,7 +535,14 @@ def inspect_bga_comprehensive(
         draw_on_result=False,
     )
 
-    # 3. 综合判定
+    # 3. 虚焊缺陷巡检 (全面复用高精度精修半径)
+    insufficient_defects, area_stats = detect_insufficient_solders(
+        solder_points=void_results,
+        undersize_threshold=undersize_threshold,
+        reference_mode=area_reference_mode,
+    )
+
+    # 4. 三重综合判定与归因
     ng_reasons: List[str] = []
     void_ng_count = 0
     max_void_rate = 0.0
@@ -427,7 +562,15 @@ def inspect_bga_comprehensive(
             f"小锡球中心: {bd['small_ball'][:2]}, 框: {bd['roi_box']}"
         )
 
-    board_status = "NG" if (void_ng_count > 0 or bridge_count > 0) else "PASS"
+    insufficient_count = len(insufficient_defects)
+    for defect in insufficient_defects:
+        cx, cy = defect["center"]
+        ng_reasons.append(
+            f"焊球 #{defect['solder_index']} ({cx:.0f},{cy:.0f}) 面积严重偏小 (虚焊/少锡): "
+            f"{defect['area']:.1f}px² < 均值 {defect['reference_area']:.1f}px² (缩小 -{defect['reduction_percent']:.1f}%)"
+        )
+
+    board_status = "NG" if (void_ng_count > 0 or bridge_count > 0 or insufficient_count > 0) else "PASS"
 
     summary: Dict[str, Any] = {
         "mode": InspectionMode.COMPREHENSIVE.value,
@@ -437,12 +580,17 @@ def inspect_bga_comprehensive(
         "void_ng_count": void_ng_count,
         "max_void_rate": float(max_void_rate),
         "bridge_defect_count": bridge_count,
+        "insufficient_solder_count": insufficient_count,
+        "mean_solder_area": area_stats["mean_area"],
+        "median_solder_area": area_stats["median_area"],
+        "max_reduction_percent": round(max([d["reduction_percent"] for d in insufficient_defects], default=0.0), 1),
         "elapsed_ms": round((time.time() - t_start) * 1000, 1),
     }
 
-    # 4. 可视化合成
+    # 5. 多图层全景可视化合成
     out_vis_path = None
     if save_debug_image and vis_img is not None:
+        # A. 焊球与气泡
         for idx, item in enumerate(void_results):
             cx = int(round(item["solder_circle"]["center"][0]))
             cy = int(round(item["solder_circle"]["center"][1]))
@@ -461,6 +609,7 @@ def inspect_bga_comprehensive(
                 vr_px = max(1, int(round(vc["radius"])))
                 cv2.circle(vis_img, (vcx, vcy), vr_px, v_color, 1)
 
+        # B. 桥连缺陷 (红色框 + 黄色小球)
         for bd in bridge_defects:
             rx, ry, rw, rh = bd["roi_box"]
             cv2.rectangle(vis_img, (rx, ry), (rx + rw, ry + rh), COLOR_BRIDGE_BOX, 1)
@@ -469,8 +618,13 @@ def inspect_bga_comprehensive(
             cv2.putText(vis_img, "BRIDGE", (rx, max(12, ry - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_BRIDGE_BOX, 1, cv2.LINE_AA)
 
-        # 在图像上方开辟专属空白状态栏，彻底消除对原始图像的遮挡
-        metrics_text = f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Bridges: {bridge_count} | Max-Void: {max_void_rate*100:.1f}%"
+        # C. 虚焊缺陷 (橙色外框 + 双圈 + 负缩减比例标签)
+        vis_img = draw_insufficient_defects(vis_img, insufficient_defects, draw_box=True, draw_label=True)
+
+        # D. 顶部空白状态栏 HUD 看板 (四项全景统计指标)
+        metrics_text = (
+            f"Solders: {len(void_results)} | Void-NG: {void_ng_count} | Bridges: {bridge_count} | Undersize: {insufficient_count}"
+        )
         vis_img = _attach_top_banner_hud(vis_img, "COMPREHENSIVE", board_status, metrics_text)
 
         if debug_output_dir is None:
@@ -487,6 +641,7 @@ def inspect_bga_comprehensive(
         "summary": summary,
         "void_details": void_results,
         "bridge_details": bridge_defects,
+        "insufficient_details": insufficient_defects,
         "visual_output_path": out_vis_path,
     }
 
@@ -497,18 +652,21 @@ def inspect_bga_comprehensive(
 def inspect_bga(
     input_image_path: str,
     weights_path: str,
-    mode: str = "comprehensive",          # 可选: "comprehensive"(综合) | "void"(仅气泡) | "bridge"(仅桥连)
+    mode: str = "comprehensive",          # 可选: "comprehensive"(综合) | "void"(仅气泡) | "bridge"(仅桥连) | "insufficient"(仅虚焊)
     conf_threshold: Optional[float] = None,
     ng_void_threshold: float = 0.25,
+    undersize_threshold: float = 0.20,
+    area_reference_mode: str = "mean",
     device: str = "0",
     save_debug_image: bool = True,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
     🌟 BGA 质检统一总入口 (支持 mode 切换):
-    - mode="comprehensive" (默认): 全项综合质检 (气泡 + 桥连)
+    - mode="comprehensive" (默认): 全项综合质检 (气泡 + 桥连 + 虚焊)
     - mode="void": 仅气泡质检
     - mode="bridge": 仅桥连质检
+    - mode="insufficient" (或 "undersize"): 仅虚焊/少锡质检
     """
     clean_mode = str(mode).strip().lower()
     if clean_mode in ("void", "void_only"):
@@ -530,12 +688,25 @@ def inspect_bga(
             save_debug_image=save_debug_image,
             debug_output_dir=debug_output_dir,
         )
-    else: # 默认 comprehensive
+    elif clean_mode in ("insufficient", "insufficient_only", "undersize", "undersize_only"):
+        return inspect_bga_insufficient(
+            input_image_path=input_image_path,
+            weights_path=weights_path,
+            conf_threshold=conf_threshold,
+            undersize_threshold=undersize_threshold,
+            reference_mode=area_reference_mode,
+            device=device,
+            save_debug_image=save_debug_image,
+            debug_output_dir=debug_output_dir,
+        )
+    else:  # 默认 comprehensive
         return inspect_bga_comprehensive(
             input_image_path=input_image_path,
             weights_path=weights_path,
             conf_threshold=conf_threshold,
             ng_void_threshold=ng_void_threshold,
+            undersize_threshold=undersize_threshold,
+            area_reference_mode=area_reference_mode,
             device=device,
             save_debug_image=save_debug_image,
             debug_output_dir=debug_output_dir,
@@ -544,3 +715,4 @@ def inspect_bga(
 
 # 向后兼容别名 (保持旧代码调用不报错)
 inspect_bga_board = inspect_bga_comprehensive
+

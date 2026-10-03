@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 焊点【全项综合质检 (气泡 + 桥连)】批量测试脚本 (Comprehensive Batch Test)
---------------------------------------------------------------------------------
-调用函数: inspect_bga_comprehensive() [或 inspect_bga()]
-质检维度: 气泡空洞率 + 焊球间桥连短路 双重质检
+🌟 BGA 焊球【仅虚焊/少锡】批量质检测试脚本 (Insufficient Solder Batch Test)
+-------------------------------------------------------------------
+调用函数: inspect_bga_insufficient()
+质检维度: 仅检测焊球面积异常偏小 (虚焊/少锡) 缺陷
 """
 import os
 import sys
@@ -16,15 +16,15 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from bga_pipeline import inspect_bga_comprehensive
+from bga_pipeline import inspect_bga_insufficient
 
 
-def run_batch_comprehensive_test():
+def run_batch_insufficient_test():
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(backend_dir)
     weights_path = os.path.join(backend_dir, "best.pt")
     input_imgs_dir = os.path.join(project_dir, "data", "imgs")
-    output_dir = os.path.join(backend_dir, "output", "comprehensive")
+    output_dir = os.path.join(backend_dir, "output", "insufficient_only")
     os.makedirs(output_dir, exist_ok=True)
 
     supported_exts = (".jpg", ".jpeg", ".png", ".bmp")
@@ -38,12 +38,12 @@ def run_batch_comprehensive_test():
         print(f"[ERROR] 目录中未找到任何图片: {input_imgs_dir}")
         return
 
-    print("=" * 70)
-    print("🚀 BGA 焊点【全项综合质检 (气泡 + 桥连)】批量测试启动 (Comprehensive)")
+    print("=" * 75)
+    print("🚀 BGA 焊球【仅虚焊/少锡】批量质检测试启动 (Insufficient Solder Only)")
     print(f"📦 权重模型: {weights_path}")
     print(f"📂 待测目录: {input_imgs_dir} ({len(all_image_paths)} 张)")
     print(f"📁 输出目录: {output_dir}")
-    print("=" * 70)
+    print("=" * 75)
 
     report_list = []
     total_start = time.time()
@@ -52,15 +52,14 @@ def run_batch_comprehensive_test():
 
     for idx, img_path in enumerate(all_image_paths, start=1):
         fname = os.path.basename(img_path)
-        print(f"\n[{idx}/{len(all_image_paths)}] 正在全项质检: {fname} ...")
+        print(f"\n[{idx}/{len(all_image_paths)}] 正在质检虚焊: {fname} ...")
 
         try:
-            res = inspect_bga_comprehensive(
+            res = inspect_bga_insufficient(
                 input_image_path=img_path,
                 weights_path=weights_path,
-                ng_void_threshold=0.25, # 25% 气泡超标阈值
-                undersize_threshold=0.20, # 20% 虚焊缩减阈值
-                area_reference_mode="mean",
+                undersize_threshold=0.20, # 面积比均值缩小 20% 以上判为虚焊
+                reference_mode="mean",    # 算术均值基准
                 device="0",
                 save_debug_image=True,
                 debug_output_dir=output_dir,
@@ -68,9 +67,7 @@ def run_batch_comprehensive_test():
 
             status = res["board_status"]
             summary = res["summary"]
-            void_ng = summary["void_ng_count"]
-            bridge_cnt = summary["bridge_defect_count"]
-            insufficient_cnt = summary.get("insufficient_solder_count", 0)
+            insufficient_cnt = summary["insufficient_solder_count"]
             elapsed = summary["elapsed_ms"]
 
             if status == "PASS":
@@ -80,21 +77,15 @@ def run_batch_comprehensive_test():
                 total_ng += 1
                 status_str = "❌ NG"
 
-            print(f"    -> 综合判定: {status_str} | 耗时: {elapsed:.1f}ms | 焊球: {summary['solder_count']} 个")
             print(
-                f"       气泡超标: {void_ng} (最大: {summary['max_void_rate']*100:.1f}%) | "
-                f"桥连缺陷: {bridge_cnt} | 虚焊偏小: {insufficient_cnt} (均值: {summary.get('mean_solder_area', 0):.0f}px²)"
+                f"    -> 判定结果: {status_str} | 耗时: {elapsed:.1f}ms | 焊球: {summary['solder_count']} 个 | "
+                f"虚焊球数: {insufficient_cnt} 处 | 均值面积: {summary['mean_solder_area']:.1f}px²"
             )
-            if res["ng_reasons"]:
-                print(f"       ⚠️ NG 缺陷详情:")
-                for r in res["ng_reasons"][:5]:
-                    print(f"          - {r}")
-                if len(res["ng_reasons"]) > 5:
-                    print(f"          - ... 及其他 {len(res['ng_reasons']) - 5} 项超标")
+            for r in res["ng_reasons"]:
+                print(f"       ⚠️ {r}")
 
             report_list.append({
                 "file_name": fname,
-                "file_path": img_path,
                 "board_status": status,
                 "summary": summary,
                 "ng_reasons": res["ng_reasons"],
@@ -107,18 +98,18 @@ def run_batch_comprehensive_test():
             traceback.print_exc()
 
     total_time = round(time.time() - total_start, 2)
-    print("\n" + "=" * 70)
-    print("🏁 【全项综合质检】批量测试完成！")
+    print("\n" + "=" * 75)
+    print("🏁 【仅虚焊/少锡】批量测试完成！")
     print(f"   总测试图片: {len(all_image_paths)} 张 | PASS: {total_pass} 张 | NG: {total_ng} 张")
     print(f"   总耗时: {total_time} 秒 (平均每张: {round(total_time / len(all_image_paths), 2)} 秒)")
-    print(f"   综合标注图已保存至: {output_dir}")
+    print(f"   标注图已保存至: {output_dir}")
 
-    report_json_path = os.path.join(output_dir, "comprehensive_batch_report.json")
+    report_json_path = os.path.join(output_dir, "insufficient_batch_report.json")
     with open(report_json_path, "w", encoding="utf-8") as f:
         json.dump(report_list, f, ensure_ascii=False, indent=2)
     print(f"   结构化报告已保存至: {report_json_path}")
-    print("=" * 70)
+    print("=" * 75)
 
 
 if __name__ == "__main__":
-    run_batch_comprehensive_test()
+    run_batch_insufficient_test()
