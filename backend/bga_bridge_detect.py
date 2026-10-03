@@ -275,6 +275,29 @@ def detect_bga_bridges(
         if lbl_A == 0 or lbl_B == 0 or lbl_A != lbl_B:
             continue
 
+        # 🚀 规则 3.1：精准拦截 PCB 底部/背面贴装的标准长方形阻容元器件 (SMD Components)
+        # 物理本质区别:
+        # 1. 长方形阻容贴片元件: 外接矩形填充度高 (rect_ratio >= 0.71)，边缘平直且周长比极低 (peri_ratio <= 1.25)，长宽比在 1.22 以上；
+        # 2. 真实焊点桥连: 两球熔融表面张力形成凹弧颈部 (葫芦形/沙漏形)，矩形填充度上限 <= 0.69，凹曲边缘导致周长比远大于 1.25。
+        comp_mask = (labels == lbl_A).astype(np.uint8) * 255
+        cnts_comp, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts_comp:
+            c_metal = max(cnts_comp, key=cv2.contourArea)
+            m_area = cv2.contourArea(c_metal)
+            if m_area >= 50:
+                rot = cv2.minAreaRect(c_metal)
+                (rw_r, rh_r) = rot[1]
+                m_w, m_h = min(rw_r, rh_r), max(rw_r, rh_r)
+                rect_ratio_metal = m_area / max(1.0, m_w * m_h)
+                aspect_metal = m_h / max(1.0, m_w)
+                peri_metal = cv2.arcLength(c_metal, True)
+                rect_peri = 2.0 * (m_w + m_h)
+                peri_ratio = peri_metal / max(1.0, rect_peri)
+
+                # 拦截标准规则长方形 SMD 元器件 (绝非焊锡桥连)
+                if rect_ratio_metal >= 0.71 and peri_ratio <= 1.25 and aspect_metal >= 1.22:
+                    continue
+
         # 两端焊球边缘环带 (用于双端连接判定，严格贴合球外缘)
         ring_A = np.zeros_like(bin_metal)
         cv2.circle(ring_A, (loc_ax, loc_ay), max(2, int(round(ball_A["r"] * 1.05))), 255, 2)
@@ -323,7 +346,7 @@ def detect_bga_bridges(
             if rw * rh > 0:
                 rect_ratio = area / (rw * rh)
                 rot_aspect = max(rw, rh) / max(1.0, min(rw, rh))
-                if rect_ratio > 0.86 and rot_aspect > 1.6:
+                if rect_ratio > 0.80 and rot_aspect > 1.4:
                     continue
                 if rot_aspect > 2.4:
                     continue
@@ -332,7 +355,8 @@ def detect_bga_bridges(
             cnt_mask = np.zeros_like(bin_gap)
             cv2.drawContours(cnt_mask, [cnt], -1, 255, -1)
             dist_map = cv2.distanceTransform(cnt_mask, cv2.DIST_L2, 3)
-            dist_peak = float(dist_map.max())
+            _, dist_peak, _, max_loc = cv2.minMaxLoc(dist_map)
+            dist_peak = float(dist_peak)
             # 实心小圆球必须有物理厚度膨胀 (内切圆半径峰值 >= 2.5 像素，彻底杜绝细走线)
             if dist_peak < 2.5:
                 continue
@@ -380,8 +404,19 @@ def detect_bga_bridges(
             # 必须同时连接两焊点的边缘！
             if touch_A and touch_B:
                 is_bridged = True
-                bridge_center = (int(round(global_cx)), int(round(global_cy)))
-                bridge_radius = max(3, int(round(cr)))
+                
+                # 🌟 核心优化 1：精准小球中心定位在距离变换峰值点 (实体颈部最厚实正中央)
+                c_x = int(round(max_loc[0] + x1_box))
+                c_y = int(round(max_loc[1] + y1_box))
+                bridge_center = (c_x, c_y)
+
+                # 🌟 核心优化 2：小球半径严控——绝不超出焊点边缘！
+                # 半径紧密贴合桥连颈部实际厚度 (dist_peak)，并受两焊球边缘物理净间隙 (edge_gap) 的严格物理几何约束
+                edge_gap = max(2.0, dist_ab - ball_A["r"] - ball_B["r"])
+                max_r_by_gap = max(3.0, (edge_gap / 2.0) * 0.88)
+                max_r_by_ball = min(ball_A["r"], ball_B["r"]) * 0.55
+                r_fit = min(dist_peak, max_r_by_gap, max_r_by_ball)
+                bridge_radius = max(3, int(round(r_fit)))
                 break
 
         if is_bridged and bridge_center is not None:
