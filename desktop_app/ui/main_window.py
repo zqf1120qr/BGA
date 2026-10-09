@@ -201,6 +201,10 @@ class MainWindow(QMainWindow):
         self._load_stylesheet()
         self._connect_signals()
 
+        # 4. 后台静默预热深度学习模型 (预热 GPU/CPU，消除首次点击的冷启动等待)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(200, self._start_background_model_preload)
+
     # ==============================================================
     # ================= 🌟 [UI 界面构建与布局] ======================
     # ==============================================================
@@ -866,3 +870,21 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "导出成功", f"Excel 数据表已保存至:\n{save_path}")
             except Exception as e:
                 QMessageBox.critical(self, "导出失败", f"生成 Excel 表格失败: {e}")
+
+    def _start_background_model_preload(self):
+        """后台守护线程静默预加载检测器模型，消除首张图片的冷启动等待，且不阻塞 UI 交互"""
+        import threading
+        def _preload_worker():
+            try:
+                from bga_void_seg import get_detector_instance
+                device, _, _ = hardware_sniffer.resolve_device(self.config.hardware_device)
+                det = get_detector_instance(self.config.weights_path, device=device)
+                import torch
+                dummy = torch.zeros((1, 3, 640, 640), dtype=torch.half if det.half else torch.float32, device=det.device)
+                with torch.no_grad():
+                    _ = det.model(dummy)
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_preload_worker, daemon=True, name="ModelWarmupThread")
+        t.start()
