@@ -22,6 +22,11 @@ try:
 except ImportError:
     print("[WARNING] 未找到 detector 模块，请确保项目结构正确或其在系统路径下。")
 
+def _get_safe_debug_out_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "debug_out")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_out")
+
 # ==============================================================
 # ================= 🌟 [数据模型定义] 对齐后端接口 =================
 # ==============================================================
@@ -231,7 +236,7 @@ def predict_and_generate_mask(
     # 1. 解析动态扩展参数
     device = kwargs.get('device', "0")
     save_debug_image = kwargs.get('save_debug_image', False)
-    debug_output_dir = kwargs.get('debug_output_dir', os.path.join(os.path.dirname(__file__), 'debug_out'))
+    debug_output_dir = kwargs.get('debug_output_dir', _get_safe_debug_out_dir())
     min_void_area = kwargs.get('min_void_area', MIN_VOID_AREA)
     ng_thresh_ratio = kwargs.get('ng_threshold', NG_RATIO_THRESH) / 100.0
 
@@ -461,7 +466,7 @@ def predict_and_generate_mask(
     # 1. 解析动态扩展参数
     device = kwargs.get('device', "0")
     save_debug_image = kwargs.get('save_debug_image', False)
-    debug_output_dir = kwargs.get('debug_output_dir', os.path.join(os.path.dirname(__file__), 'debug_out'))
+    debug_output_dir = kwargs.get('debug_output_dir', _get_safe_debug_out_dir())
     min_void_area = kwargs.get('min_void_area', MIN_VOID_AREA)
     ng_thresh_ratio = kwargs.get('ng_threshold', NG_RATIO_THRESH) / 100.0
 

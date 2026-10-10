@@ -1,6 +1,15 @@
 .idea
-__pycache__
+__pycache__/
+*.py[cod]
 *_out
-data\
-output\
-backend\output
+data/
+output/
+backend/output/
+
+# 打包构建产物
+build/
+dist/
+*.spec.bak
+*.log
+crash.log
+scratch/

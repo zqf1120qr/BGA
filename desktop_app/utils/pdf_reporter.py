@@ -15,32 +15,9 @@ import datetime
 import os
 from typing import Any, Dict, List
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm, inch
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Image,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
-
 from desktop_app.core.inspection_manager import SolderBallRecord
 
-# 注册中文字体 (Windows 标配黑体)
-font_path = os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "simhei.ttf")
-FONT_NAME = "Helvetica"
-if os.path.exists(font_path):
-    try:
-        pdfmetrics.registerFont(TTFont("SimHei", font_path))
-        FONT_NAME = "SimHei"
-    except Exception:
-        pass
+FONT_NAME = "SimHei"
 
 
 def export_inspection_pdf(
@@ -50,6 +27,32 @@ def export_inspection_pdf(
     records: List[SolderBallRecord],
     preview_img_path: str | None = None,
 ):
+    global FONT_NAME
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm, inch
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import (
+        Image,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    # 注册中文字体 (Windows 标配黑体)
+    font_path = os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "simhei.ttf")
+    if os.path.exists(font_path):
+        try:
+            pdfmetrics.registerFont(TTFont("SimHei", font_path))
+            FONT_NAME = "SimHei"
+        except Exception:
+            FONT_NAME = "Helvetica"
+    else:
+        FONT_NAME = "Helvetica"
     doc = SimpleDocTemplate(
         save_path,
         pagesize=A4,

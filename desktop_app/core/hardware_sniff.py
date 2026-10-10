@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import platform
 from typing import Tuple
-import torch
 
 
 class HardwareSniffer:
@@ -22,32 +21,37 @@ class HardwareSniffer:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._init_hardware()
+            cls._instance._initialized = False
+            cls._instance.has_cuda = False
+            cls._instance.gpu_count = 0
+            cls._instance.gpu_name = ""
+            cls._instance.gpu_memory_gb = 0.0
+            cls._instance.cpu_cores = os.cpu_count() or 4
+            cls._instance.cpu_arch = platform.processor() or "x86_64"
         return cls._instance
 
-    def _init_hardware(self):
-        self.has_cuda = torch.cuda.is_available()
-        self.gpu_count = torch.cuda.device_count() if self.has_cuda else 0
-        self.gpu_name = ""
-        self.gpu_memory_gb = 0.0
-
-        if self.has_cuda and self.gpu_count > 0:
-            try:
-                props = torch.cuda.get_device_properties(0)
-                self.gpu_name = props.name
-                self.gpu_memory_gb = round(props.total_memory / (1024 ** 3), 1)
-            except Exception:
-                self.gpu_name = "NVIDIA CUDA Device"
-
-        self.cpu_cores = os.cpu_count() or 4
-        self.cpu_arch = platform.processor() or "x86_64"
-
-        # 若在 CPU 模式，默认启用全核多线程并发
-        if not self.has_cuda:
-            try:
-                torch.set_num_threads(self.cpu_cores)
-            except Exception:
-                pass
+    def _ensure_hardware(self):
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
+        try:
+            import torch
+            self.has_cuda = torch.cuda.is_available()
+            self.gpu_count = torch.cuda.device_count() if self.has_cuda else 0
+            if self.has_cuda and self.gpu_count > 0:
+                try:
+                    props = torch.cuda.get_device_properties(0)
+                    self.gpu_name = props.name
+                    self.gpu_memory_gb = round(props.total_memory / (1024 ** 3), 1)
+                except Exception:
+                    self.gpu_name = "NVIDIA CUDA Device"
+            if not self.has_cuda:
+                try:
+                    torch.set_num_threads(self.cpu_cores)
+                except Exception:
+                    pass
+        except Exception:
+            self.has_cuda = False
 
     def resolve_device(self, user_preference: str = "auto") -> Tuple[str, str, str]:
         """
@@ -56,6 +60,7 @@ class HardwareSniffer:
         :return: (target_device_str, status_text, status_color)
                  status_color: "green" (GPU) | "yellow" (CPU正常) | "orange" (降级警示)
         """
+        self._ensure_hardware()
         pref = str(user_preference).strip().lower()
 
         if pref == "auto":

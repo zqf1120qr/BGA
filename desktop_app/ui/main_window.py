@@ -57,6 +57,7 @@ from desktop_app.ui.panels.thumbnail_bar import BatchThumbnailBar
 from desktop_app.ui.viewports.image_canvas import ImageCanvasView
 from desktop_app.utils.excel_reporter import export_inspection_excel
 from desktop_app.utils.pdf_reporter import export_inspection_pdf
+from desktop_app.ui.splash_screen import get_app_icon_path
 
 
 class CustomTitleBar(QFrame):
@@ -103,10 +104,17 @@ class CustomTitleBar(QFrame):
         layout.setContentsMargins(12, 0, 8, 0)
         layout.setSpacing(10)
 
-        # 标志点与标题
-        self.lbl_dot = QLabel("●")
-        self.lbl_dot.setStyleSheet("color: #38bdf8; font-size: 12px;")
-        layout.addWidget(self.lbl_dot)
+        # 应用图标与标题
+        icon_path = get_app_icon_path()
+        if icon_path and os.path.exists(icon_path):
+            self.lbl_icon = QLabel()
+            self.lbl_icon.setPixmap(QIcon(icon_path).pixmap(18, 18))
+            self.lbl_icon.setStyleSheet("border: none; background: transparent;")
+            layout.addWidget(self.lbl_icon)
+        else:
+            self.lbl_dot = QLabel("●")
+            self.lbl_dot.setStyleSheet("color: #38bdf8; font-size: 12px;")
+            layout.addWidget(self.lbl_dot)
 
         self.lbl_title = QLabel("BGA 智能工业质检工作站")
         self.lbl_title.setStyleSheet("font-weight: 800; font-size: 12px; color: #f8fafc; letter-spacing: 0.5px;")
@@ -182,6 +190,11 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.resize(1460, 920)
         self.setMinimumSize(1120, 720)
+
+        # 绑定应用与窗口专属图标 (确保任务栏与系统原生显示)
+        icon_path = get_app_icon_path()
+        if icon_path and os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.config = app_config_mgr.config
         self.session = InspectionSession()
@@ -474,16 +487,39 @@ class MainWindow(QMainWindow):
         parent_layout.addWidget(status_frame)
 
     def _load_stylesheet(self):
-        qss_path = os.path.join(os.path.dirname(__file__), "styles", "dark_industrial.qss")
-        if os.path.exists(qss_path):
-            with open(qss_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                arrow_icon = os.path.join(os.path.dirname(__file__), "styles", "arrow_down.png").replace("\\", "/")
-                content = content.replace("url(arrow_down.png)", f"url({arrow_icon})")
-                app_inst = QApplication.instance()
-                if app_inst:
-                    app_inst.setStyleSheet(content)
-                self.setStyleSheet(content)
+        # 兼容源码与打包冻结环境的多路径回退探测
+        search_dirs = []
+        if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                search_dirs.append(os.path.join(meipass, "desktop_app", "ui", "styles"))
+                search_dirs.append(os.path.join(meipass, "styles"))
+            exe_dir = os.path.dirname(sys.executable)
+            search_dirs.append(os.path.join(exe_dir, "styles"))
+            search_dirs.append(os.path.join(exe_dir, "desktop_app", "ui", "styles"))
+        search_dirs.append(os.path.join(os.path.dirname(__file__), "styles"))
+
+        target_qss = None
+        target_dir = None
+        for d in search_dirs:
+            candidate = os.path.join(d, "dark_industrial.qss")
+            if os.path.exists(candidate):
+                target_qss = candidate
+                target_dir = d
+                break
+
+        if target_qss and os.path.exists(target_qss):
+            try:
+                with open(target_qss, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    arrow_icon = os.path.join(target_dir, "arrow_down.png").replace("\\", "/")
+                    content = content.replace("url(arrow_down.png)", f"url({arrow_icon})")
+                    app_inst = QApplication.instance()
+                    if app_inst:
+                        app_inst.setStyleSheet(content)
+                    self.setStyleSheet(content)
+            except Exception as e:
+                print(f"[WARN] 加载样式表异常: {e}")
 
     # ==============================================================
     # ================= 🌟 [信号槽事件绑定] =========================

@@ -24,7 +24,6 @@ backend_dir = os.path.join(project_root, "backend")
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from bga_pipeline import inspect_bga
 from desktop_app.app_config import InspectionConfig
 from desktop_app.core.hardware_sniff import hardware_sniffer
 
@@ -77,6 +76,7 @@ class InspectionWorker(QThread):
 
             t_start = time.time()
             try:
+                from bga_pipeline import inspect_bga
                 # 调用核心质检函数
                 result = inspect_bga(
                     input_image_path=img_path,

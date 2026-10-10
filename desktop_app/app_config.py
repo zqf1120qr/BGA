@@ -5,6 +5,7 @@
 from __future__ import annotations
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass
 from typing import Any, Dict
 
@@ -28,15 +29,28 @@ class InspectionConfig:
 class AppConfigManager:
     """管理并持久化桌面端配置"""
     def __init__(self):
-        self.desktop_dir = os.path.dirname(os.path.abspath(__file__))
-        self.project_root = os.path.dirname(self.desktop_dir)
-        self.config_file = os.path.join(self.desktop_dir, "settings.json")
+        if getattr(sys, "frozen", False):
+            self.base_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+            self.app_dir = os.path.dirname(sys.executable)
+        else:
+            self.desktop_dir = os.path.dirname(os.path.abspath(__file__))
+            self.base_dir = os.path.dirname(self.desktop_dir)
+            self.app_dir = self.base_dir
+
+        self.config_file = os.path.join(self.app_dir, "settings.json")
         self.config = InspectionConfig()
         
-        # 默认权重路径
-        default_weights = os.path.join(self.project_root, "backend", "best.pt")
-        if os.path.exists(default_weights):
-            self.config.weights_path = default_weights
+        # 寻找默认权重路径 (优先外部同级目录，回退内部嵌入资源)
+        weights_candidates = [
+            os.path.join(self.app_dir, "backend", "best.pt"),
+            os.path.join(self.app_dir, "best.pt"),
+            os.path.join(self.base_dir, "backend", "best.pt"),
+            os.path.join(self.base_dir, "best.pt"),
+        ]
+        for w in weights_candidates:
+            if os.path.exists(w):
+                self.config.weights_path = os.path.abspath(w)
+                break
 
         self.load()
 

@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import datetime
 from typing import Any, Dict, List
-import openpyxl
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
 from desktop_app.core.inspection_manager import SolderBallRecord
 
@@ -21,6 +18,10 @@ def export_inspection_excel(
     summary_stats: Dict[str, Any],
     records: List[SolderBallRecord],
 ):
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
     wb = openpyxl.Workbook()
 
     # --- Sheet 1: 质检汇总总览 ---

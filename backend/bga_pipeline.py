@@ -82,6 +82,15 @@ class BoardInspectionResult(TypedDict):
     visual_output_path: Optional[str]                     # 最终合成质检标注图路径
 
 
+def _get_safe_output_dir(sub_mode: str) -> str:
+    """获取安全的输出目录 (兼容源码模式与 PyInstaller 打包环境)"""
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "output", sub_mode)
+
+
 def _attach_top_banner_hud(
     vis_img: np.ndarray,
     mode_title: str,
@@ -229,7 +238,7 @@ def inspect_bga_void(
         vis_img = _attach_top_banner_hud(vis_img, "VOID ONLY", board_status, metrics_text)
 
         if debug_output_dir is None:
-            debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "void_only")
+            debug_output_dir = _get_safe_output_dir("void_only")
         os.makedirs(debug_output_dir, exist_ok=True)
         base_stem = os.path.splitext(os.path.basename(input_image_path))[0]
         out_vis_path = os.path.join(debug_output_dir, f"{base_stem}_void_inspected.jpg")
@@ -348,7 +357,7 @@ def inspect_bga_bridge(
         vis_img = _attach_top_banner_hud(vis_img, "BRIDGE ONLY", board_status, metrics_text)
 
         if debug_output_dir is None:
-            debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "bridge_only")
+            debug_output_dir = _get_safe_output_dir("bridge_only")
         os.makedirs(debug_output_dir, exist_ok=True)
         base_stem = os.path.splitext(os.path.basename(input_image_path))[0]
         out_vis_path = os.path.join(debug_output_dir, f"{base_stem}_bridge_inspected.jpg")
@@ -457,7 +466,7 @@ def inspect_bga_insufficient(
         vis_img = _attach_top_banner_hud(vis_img, "UNDERSIZE ONLY", board_status, metrics_text)
 
         if debug_output_dir is None:
-            debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "insufficient_only")
+            debug_output_dir = _get_safe_output_dir("insufficient_only")
         os.makedirs(debug_output_dir, exist_ok=True)
         base_stem = os.path.splitext(os.path.basename(input_image_path))[0]
         out_vis_path = os.path.join(debug_output_dir, f"{base_stem}_insufficient_inspected.jpg")
@@ -628,7 +637,7 @@ def inspect_bga_comprehensive(
         vis_img = _attach_top_banner_hud(vis_img, "COMPREHENSIVE", board_status, metrics_text)
 
         if debug_output_dir is None:
-            debug_output_dir = os.path.join(os.path.dirname(__file__), "output", "comprehensive")
+            debug_output_dir = _get_safe_output_dir("comprehensive")
         os.makedirs(debug_output_dir, exist_ok=True)
         base_stem = os.path.splitext(os.path.basename(input_image_path))[0]
         out_vis_path = os.path.join(debug_output_dir, f"{base_stem}_all_inspected.jpg")
