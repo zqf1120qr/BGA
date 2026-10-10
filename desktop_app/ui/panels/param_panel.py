@@ -41,80 +41,60 @@ class ParamPanel(QFrame):
         panel_layout.setSpacing(10)
 
         # ==========================================================
-        # 1. 独立卡片：运算引擎与质检维度 (EngineCard)
+        # 1. 独立卡片：检测项目设置 (Card 2)
         # ==========================================================
         self.card_engine = QFrame()
         self.card_engine.setObjectName("EngineCard")
         engine_layout = QVBoxLayout(self.card_engine)
-        engine_layout.setContentsMargins(12, 12, 12, 12)
-        engine_layout.setSpacing(8)
+        engine_layout.setContentsMargins(12, 10, 12, 10)
+        engine_layout.setSpacing(6)
 
-        lbl_engine_head = QLabel("运算引擎与质检维度")
-        lbl_engine_head.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 4px 0;")
+        lbl_engine_head = QLabel("检测项目设置")
+        lbl_engine_head.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 2px 0;")
         engine_layout.addWidget(lbl_engine_head)
 
-        lbl_hw_title = QLabel("运算引擎模式:")
-        lbl_hw_title.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
-        engine_layout.addWidget(lbl_hw_title)
-
-        self.cb_hardware = QComboBox()
-        self.cb_hardware.setMinimumHeight(32)
-        self.cb_hardware.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cb_hardware.addItems([
-            "自动感知 (GPU优先 / 自动防灾)",
-            "强制指定 GPU (CUDA:0)",
-            "纯 CPU 多核并发模式"
-        ])
-        self.cb_hardware.currentIndexChanged.connect(self._on_hardware_changed)
-        engine_layout.addWidget(self.cb_hardware)
-
-        # 硬件状态展示标签 (兼容原有属性)
-        self.lbl_hw_status = QLabel("● 正在探测计算硬件...")
-        self.lbl_hw_status.setStyleSheet("color: #10b981; font-size: 11px; padding: 2px 4px;")
-        self.lbl_hw_status.hide()
-
         lbl_mode_title = QLabel("质检维度范围:")
-        lbl_mode_title.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600; margin-top: 2px;")
+        lbl_mode_title.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600;")
         engine_layout.addWidget(lbl_mode_title)
 
         self.cb_mode = QComboBox()
         self.cb_mode.setMinimumHeight(32)
         self.cb_mode.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cb_mode.addItem("全项综合质检 (气泡 + 桥连 + 虚焊)", "comprehensive")
-        self.cb_mode.addItem("仅气泡质检 (Void Only)", "void")
-        self.cb_mode.addItem("仅桥连质检 (Bridge Only)", "bridge")
-        self.cb_mode.addItem("仅虚焊少锡质检 (Insufficient Only)", "insufficient")
+        self.cb_mode.addItem("全项综合检测 (气泡 + 桥连 + 虚焊)", "comprehensive")
+        self.cb_mode.addItem("仅气泡空洞检测", "void")
+        self.cb_mode.addItem("仅桥连短路检测", "bridge")
+        self.cb_mode.addItem("仅虚焊少锡检测", "insufficient")
         self.cb_mode.currentIndexChanged.connect(self._on_mode_changed)
         engine_layout.addWidget(self.cb_mode)
 
         panel_layout.addWidget(self.card_engine)
 
         # ==========================================================
-        # 2. 独立卡片：算法判废门限微调 (ThreshCard)
+        # 2. 独立卡片：合格判定标准设置 (Card 3)
         # ==========================================================
         self.card_thresh = QFrame()
         self.card_thresh.setObjectName("ThreshCard")
         thresh_layout = QVBoxLayout(self.card_thresh)
-        thresh_layout.setContentsMargins(12, 12, 12, 12)
-        thresh_layout.setSpacing(10)
+        thresh_layout.setContentsMargins(12, 10, 12, 10)
+        thresh_layout.setSpacing(8)
 
-        lbl_thresh_head = QLabel("算法判废门限微调")
-        lbl_thresh_head.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 4px 0;")
+        lbl_thresh_head = QLabel("合格判定标准设置")
+        lbl_thresh_head.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 2px 0;")
         thresh_layout.addWidget(lbl_thresh_head)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(8)
 
-        # A. 检出置信度 (Conf)
-        lbl_conf_title = QLabel("检出置信度:")
+        # A. 焊点识别过滤程度 (原检出置信度)
+        lbl_conf_title = QLabel("焊点识别过滤程度:")
         lbl_conf_title.setStyleSheet("color: #cbd5e1; font-size: 12px;")
         lbl_conf_title.setToolTip(
-            "【检出置信度 (Confidence Threshold)】\n"
-            "YOLO 深度学习模型初筛候选焊球的置信度门限 (10% ~ 90%)。\n"
-            "• 默认设定为 20% (0.20)，兼顾极暗、低对比度边缘弱小焊球的最高召回率；\n"
-            "• 多余或误检伪点将由后序拓扑阵列规则自动过滤清洗；\n"
-            "• 若基板严重反光或背景杂散干扰过多，可微调至 35% ~ 50%。"
+            "【焊点识别过滤程度 (Confidence)】\n"
+            "初筛候选焊球的把关门槛标准 (10% ~ 90%)。\n"
+            "• 数值越小: 门槛越低，防止暗淡焊点漏检；\n"
+            "• 数值越大: 过滤越严格，强力抑制基板反光与噪点；\n"
+            "• 推荐基准值: 20%。"
         )
         grid.addWidget(lbl_conf_title, 0, 0)
         self.slider_conf = QSlider(Qt.Orientation.Horizontal)
@@ -127,13 +107,13 @@ class ParamPanel(QFrame):
         grid.addWidget(self.slider_conf, 0, 1)
         grid.addWidget(self.lbl_conf_val, 0, 2)
 
-        # B. 气泡超标阈值 (5% ~ 50%)
-        lbl_void_title = QLabel("气泡超标阈值:")
+        # B. 气泡占比超标阈值
+        lbl_void_title = QLabel("气泡占比超标阈值:")
         lbl_void_title.setStyleSheet("color: #cbd5e1; font-size: 12px;")
         lbl_void_title.setToolTip(
-            "【气泡空洞率阈值 (Void Threshold)】\n"
-            "单焊球内气泡空洞投影面积占焊球总面积的百分比上限，超过此值判为 NG。\n"
-            "• IPC-A-610 国际电子组装标准推荐判定线为 25%。"
+            "【气泡占比超标阈值 (Void Ratio)】\n"
+            "单个焊球内部气泡空洞面积占焊球总面积的允许上限，超过此值判为 NG。\n"
+            "• IPC-A-610 国际组装工业标准推荐线为 25%。"
         )
         grid.addWidget(lbl_void_title, 1, 0)
         self.slider_void = QSlider(Qt.Orientation.Horizontal)
@@ -146,13 +126,13 @@ class ParamPanel(QFrame):
         grid.addWidget(self.slider_void, 1, 1)
         grid.addWidget(self.lbl_void_val, 1, 2)
 
-        # C. 虚焊少锡判定阈值 (5% ~ 50%)
-        lbl_insuff_title = QLabel("虚焊少锡阈值:")
+        # C. 虚焊少锡缺少比例
+        lbl_insuff_title = QLabel("虚焊少锡缺少比例:")
         lbl_insuff_title.setStyleSheet("color: #cbd5e1; font-size: 12px;")
         lbl_insuff_title.setToolTip(
-            "【虚焊少锡判定阈值 (Insufficient Solder Threshold)】\n"
-            "焊球实测面积相对于整板焊球基准面积的缩减容忍上限，缩减比例超过此值判为虚焊少锡。\n"
-            "• 例如设为 20% 时，若某焊球比平均面积小 20% 以上，即报警提示虚焊少锡风险。\n"
+            "【虚焊少锡缺少比例 (面积偏小容忍上限)】\n"
+            "焊球实测面积相对于整板标准焊球缩小的容忍上限，缩减比例超过此值提示虚焊风险。\n"
+            "• 例如设为 20% 时，若某个焊球比正常平均面积小 20% 以上，即判定为少锡/虚焊 NG。\n"
             "• 工业推荐值: 20%。"
         )
         grid.addWidget(lbl_insuff_title, 2, 0)
@@ -181,18 +161,10 @@ class ParamPanel(QFrame):
         self._refresh_hardware_status()
 
     def _refresh_hardware_status(self):
-        idx = self.cb_hardware.currentIndex()
-        pref_map = {0: "auto", 1: "0", 2: "cpu"}
-        user_pref = pref_map.get(idx, "auto")
-        self.config.hardware_device = user_pref
-
-        _, status_text, color = hardware_sniffer.resolve_device(user_pref)
-        self.lbl_hw_status.setText(f"● {status_text}")
+        # 始终使用 auto 自动检测模式，广播硬件状态由主窗口右下角状态栏统一展示
+        self.config.hardware_device = "auto"
+        _, status_text, color = hardware_sniffer.resolve_device("auto")
         self.sig_hardware_updated.emit(status_text, color)
-
-    def _on_hardware_changed(self):
-        self._refresh_hardware_status()
-        self.sig_config_changed.emit()
 
     def _on_mode_changed(self):
         self.config.inspection_mode = self.cb_mode.currentData()

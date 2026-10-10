@@ -71,8 +71,8 @@ class HoverHudWidget(QFrame):
         layout.addLayout(header_layout)
 
         # 指标明细项
-        self.lbl_void = QLabel("• 气泡空洞率: 0.0%")
-        self.lbl_insuff = QLabel("• 偏离基准面积: 0.0%")
+        self.lbl_void = QLabel("• 气泡占比: 0.0%")
+        self.lbl_insuff = QLabel("• 少锡缩减率: 0.0%")
         self.lbl_bridge = QLabel("• 桥连短路: 正常")
         self.lbl_coord = QLabel("• 中心坐标: (0, 0)")
         self.lbl_coord.setStyleSheet("color: #64748b; font-size: 10px;")
@@ -101,7 +101,7 @@ class HoverHudWidget(QFrame):
 
         # 状态 Badge 颜色
         if status == "NG":
-            self.lbl_status_badge.setText("NG 异常")
+            self.lbl_status_badge.setText("NG 不良")
             self.lbl_status_badge.setStyleSheet("""
                 background-color: #f43f5e;
                 color: #ffffff;
@@ -123,25 +123,25 @@ class HoverHudWidget(QFrame):
 
         # 气泡指标
         void_color = "#f43f5e" if is_void_ng else "#38bdf8"
-        void_text = f"• 气泡空洞率: <b style='color:{void_color}'>{void_rate * 100:.1f}%</b>"
+        void_text = f"• 气泡占比: <b style='color:{void_color}'>{void_rate * 100:.1f}%</b>"
         if is_void_ng:
             void_text += " <span style='color:#f43f5e;font-size:10px;'>(超标)</span>"
         self.lbl_void.setText(void_text)
 
         # 虚焊指标
         insuff_color = "#f59e0b" if is_insuff else "#94a3b8"
-        insuff_text = f"• 偏离基准面积: <b style='color:{insuff_color}'>-{reduction_percent:.1f}%</b>"
+        insuff_text = f"• 少锡缩减率: <b style='color:{insuff_color}'>-{reduction_percent:.1f}%</b>"
         if is_insuff:
-            insuff_text += " <span style='color:#f59e0b;font-size:10px;'>(少锡)</span>"
+            insuff_text += " <span style='color:#f59e0b;font-size:10px;'>(偏小)</span>"
         self.lbl_insuff.setText(insuff_text)
 
         # 桥连指标
         if is_bridge:
-            self.lbl_bridge.setText("• 桥连短路: <b style='color:#f43f5e'>[短路异常]</b>")
+            self.lbl_bridge.setText("• 桥连短路: <b style='color:#f43f5e'>[短路不良]</b>")
         else:
             self.lbl_bridge.setText("• 桥连短路: <span style='color:#10b981'>正常</span>")
 
-        self.lbl_coord.setText(f"• 物理中心: ({cx:.1f}, {cy:.1f})")
+        self.lbl_coord.setText(f"• 中心坐标: ({cx:.1f}, {cy:.1f})")
         self.adjustSize()
 
     def show_above_ball(self, center_view: QPointF, radius_view: float, viewport_size: QSize):

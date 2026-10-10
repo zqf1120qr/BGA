@@ -251,8 +251,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.panel_control, stretch=1)
 
         left_scroll.setWidget(left_container)
-        left_scroll.setMinimumWidth(310)
-        left_scroll.setMaximumWidth(420)
+        left_scroll.setMinimumWidth(360)
+        left_scroll.setMaximumWidth(500)
 
         # 4.2 中央视口画布与批量缩略图组合容器
         center_container = QWidget()
@@ -275,19 +275,19 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(self.panel_result)
         right_layout.addWidget(self.panel_defect_table, stretch=1)
-        right_container.setMinimumWidth(350)
-        right_container.setMaximumWidth(460)
+        right_container.setMinimumWidth(370)
+        right_container.setMaximumWidth(480)
 
         # 将三部分装入 Splitter
         main_splitter.addWidget(left_scroll)
         main_splitter.addWidget(center_container)
         main_splitter.addWidget(right_container)
 
-        # 优化宽度配比：左右两翼舒展自适应 (左 330px, 右 370px)，中央视口占据核心视界 (760px)
+        # 优化宽度配比：左翼展开容纳全部圆角矩形卡片 (左 380px, 右 380px)，中央视口居中舒展 (700px)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
         main_splitter.setStretchFactor(2, 0)
-        main_splitter.setSizes([330, 760, 370])
+        main_splitter.setSizes([380, 700, 380])
 
         root_layout.addWidget(main_splitter, stretch=1)
 
@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # 快捷键工程提示
-        lbl_hint = QLabel("[鼠标滚轮/按钮]: 缩放 | [左键/右键拖拽]: 平移视口 | [空格键]: 瞬间透视原图 | [单击焊球]: 切换标注消隐")
+        lbl_hint = QLabel("[鼠标滚轮/按钮]: 缩放 | [左键/右键拖拽]: 平移画面 | [空格键]: 快速对比原图 | [单击焊球]: 切换标注显隐")
         lbl_hint.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 500;")
         layout.addWidget(lbl_hint)
 
@@ -439,9 +439,15 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 3, 10, 3)
         layout.setSpacing(10)
 
-        self.lbl_status_msg = QLabel("系统就绪: 等待加载工件图像...")
+        self.lbl_status_msg = QLabel("系统就绪: 请导入待检图片...")
         self.lbl_status_msg.setStyleSheet("color: #94a3b8; font-size: 11px;")
         layout.addWidget(self.lbl_status_msg, stretch=1)
+
+        # 硬件状态常驻胶囊指示器
+        self.lbl_hw_badge = QLabel("● 硬件自适应中...")
+        self.lbl_hw_badge.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold; padding: 2px 8px; background-color: #161e31; border-radius: 4px; border: 1px solid #1e293b;")
+        self.lbl_hw_badge.setToolTip("计算硬件状态 (系统全自动智能感知调度)")
+        layout.addWidget(self.lbl_hw_badge)
 
         self.lbl_zoom = QLabel("缩放: --%")
         self.lbl_zoom.setStyleSheet("color: #64748b; font-size: 11px; min-width: 70px;")
@@ -504,12 +510,23 @@ class MainWindow(QMainWindow):
         self.panel_control.sig_export_pdf.connect(self.export_pdf)
         self.panel_control.sig_export_excel.connect(self.export_excel)
 
-        # 参数面板动态重算
+        # 参数面板动态重算与硬件联动
         self.panel_param.sig_threshold_changed.connect(self._handle_threshold_changed)
+        self.panel_param.sig_hardware_updated.connect(self._on_hardware_updated)
+        self.panel_param._refresh_hardware_status()
 
         # 表格联动聚焦
         self.panel_defect_table.sig_ball_selected.connect(lambda idx: self.canvas.highlight_ball(idx, zoom_to=False))
         self.panel_defect_table.sig_ball_focus_requested.connect(lambda idx: self.canvas.highlight_ball(idx, zoom_to=True))
+
+    def _on_hardware_updated(self, text: str, color: str):
+        """同步硬件感知状态至底部状态栏常驻指示器"""
+        if hasattr(self, "lbl_hw_badge"):
+            self.lbl_hw_badge.setText(f"● {text}")
+            self.lbl_hw_badge.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-weight: bold; padding: 2px 8px; "
+                f"background-color: #161e31; border-radius: 4px; border: 1px solid #1e293b;"
+            )
 
     # ==============================================================
     # ================= 🌟 [业务功能实现] ===========================

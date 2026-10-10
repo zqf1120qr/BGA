@@ -53,7 +53,7 @@ class DefectTablePanel(QFrame):
         self.btn_filter_all.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_filter_all.clicked.connect(lambda: self.set_filter("all"))
 
-        self.btn_filter_defect = QPushButton("仅看缺陷 (0)")
+        self.btn_filter_defect = QPushButton("仅看不良 (0)")
         self.btn_filter_defect.setCheckable(True)
         self.btn_filter_defect.setMinimumHeight(28)
         self.btn_filter_defect.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -67,11 +67,11 @@ class DefectTablePanel(QFrame):
         self.table = QTableWidget()
         headers = [
             ("焊点ID", "焊点编号 (单击视口定位，双击平滑居中放大聚焦)"),
-            ("气泡比", "焊球内部气泡空洞率 (空洞面积 / 焊球面积)"),
-            ("偏离基准", "相对标准基准球的面积缩减率 (少锡虚焊指标)"),
-            ("桥连短路", "相邻焊球锡膏粘连短路状态与目标球号"),
-            ("置信度", "YOLO 深度学习模型识别置信度"),
-            ("结论", "该焊点综合质量判废结论 (PASS / NG)"),
+            ("气泡占比", "焊球内部气泡占比 (气泡面积 / 焊球面积)"),
+            ("少锡幅度", "相对标准焊球的面积缩减率 (虚焊少锡指标)"),
+            ("桥连短路", "相邻焊球锡膏粘连短路状态与关联焊点"),
+            ("识别可靠度", "焊球目标识别可靠度 (AI模型打分)"),
+            ("单点结论", "该焊点质量判定结果 (PASS合格 / NG不良)"),
         ]
         self.table.setColumnCount(len(headers))
         for col, (name, tip) in enumerate(headers):
@@ -83,12 +83,12 @@ class DefectTablePanel(QFrame):
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
-        self.table.setColumnWidth(0, 48)   # 焊点ID (#xxx)
-        self.table.setColumnWidth(1, 56)   # 气泡比 (xx.x%)
-        self.table.setColumnWidth(2, 60)   # 偏离基准 (-xx.x%)
+        self.table.setColumnWidth(0, 44)   # 焊点ID (#xxx)
+        self.table.setColumnWidth(1, 58)   # 气泡占比 (xx.x%)
+        self.table.setColumnWidth(2, 58)   # 少锡幅度 (-xx.x%)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 桥连短路 (自适应伸展占满剩余宽度)
-        self.table.setColumnWidth(4, 52)   # 置信度 (xx.x%)
-        self.table.setColumnWidth(5, 46)   # 结论 (PASS/NG)
+        self.table.setColumnWidth(4, 66)   # 识别可靠度 (xx.x%)
+        self.table.setColumnWidth(5, 54)   # 单点结论 (PASS/NG)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -113,7 +113,7 @@ class DefectTablePanel(QFrame):
         ng_count = sum(1 for r in self.records if r.is_ng)
 
         self.btn_filter_all.setText(f"全部焊球 ({total_count})")
-        self.btn_filter_defect.setText(f"仅看缺陷 ({ng_count})")
+        self.btn_filter_defect.setText(f"仅看不良 ({ng_count})")
 
         filtered = [
             r for r in self.records
@@ -136,33 +136,33 @@ class DefectTablePanel(QFrame):
                 f"• 交互操作: 单击联动视口选中，双击平滑居中聚焦"
             )
 
-            # 2. 气泡比
+            # 2. 气泡占比
             item_void = QTableWidgetItem(f"{rec.void_rate * 100:.1f}%")
             item_void.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item_void.setToolTip(
-                f"【焊点内部气泡空洞率】\n"
+                f"【焊点内部气泡占比】\n"
                 f"• 当前实测值: {rec.void_rate * 100:.2f}%\n"
-                f"• 判定状态: {'❌ 空洞率超标 (NG)' if rec.is_void_ng else '✅ 正常合格 (PASS)'}"
+                f"• 判定状态: {'❌ 气泡占比超标 (NG)' if rec.is_void_ng else '✅ 正常合格 (PASS)'}"
             )
 
-            # 3. 偏离基准 (少锡/虚焊)
+            # 3. 少锡幅度 (少锡/虚焊)
             insuff_str = f"-{rec.reduction_percent:.1f}%" if rec.reduction_percent > 0 else "0.0%"
             item_insuff = QTableWidgetItem(insuff_str)
             item_insuff.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item_insuff.setToolTip(
-                f"【焊点少锡偏离基准】\n"
-                f"• 面积缩减比: {rec.reduction_percent:.2f}%\n"
-                f"• 判定状态: {'❌ 焊料萎缩超标 (少锡NG)' if rec.is_insufficient else '✅ 焊料饱满正常 (PASS)'}"
+                f"【焊点少锡程度】\n"
+                f"• 面积缩减幅度: {rec.reduction_percent:.2f}%\n"
+                f"• 判定状态: {'❌ 少锡虚焊超标 (少锡NG)' if rec.is_insufficient else '✅ 锡量饱满正常 (PASS)'}"
             )
 
-            # 4. 桥连短路 (彻底解决文本截断无法查看问题，提供全量悬浮气泡预览)
+            # 4. 桥连短路
             if rec.is_bridge:
                 partners_str = ",".join(str(p) for p in rec.bridge_partners)
-                item_bridge = QTableWidgetItem(f"短路NG (#{partners_str})" if partners_str else "短路NG")
+                item_bridge = QTableWidgetItem(f"桥连NG (#{partners_str})" if partners_str else "桥连NG")
                 tip_partners = ", ".join(f"#{p}" for p in rec.bridge_partners) if rec.bridge_partners else "相邻焊点"
                 item_bridge.setToolTip(
                     f"【桥连短路异常 (NG)】\n"
-                    f"• 粘连目标球号: {tip_partners}\n"
+                    f"• 粘连关联焊点: {tip_partners}\n"
                     f"• 缺陷特征: 焊点间距过小，焊锡熔合形成导电短路\n"
                     f"• 工艺建议: 检查锡膏印刷钢网厚度及贴片压力"
                 )
@@ -171,17 +171,17 @@ class DefectTablePanel(QFrame):
                 item_bridge.setToolTip("【桥连短路状态】: 正常 (与相邻焊点间隙良好，无粘连)")
             item_bridge.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            # 5. 置信度
+            # 5. 识别可靠度
             item_conf = QTableWidgetItem(f"{rec.confidence * 100:.1f}%")
             item_conf.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item_conf.setToolTip(f"【YOLO 深度学习目标检测】\n• 焊点识别置信度: {rec.confidence * 100:.2f}%")
+            item_conf.setToolTip(f"【焊点识别情况】\n• 目标识别可靠度: {rec.confidence * 100:.2f}%")
 
-            # 6. 综合结论
+            # 6. 单点结论
             item_status = QTableWidgetItem(rec.status)
             item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            reasons = "、".join(rec.ng_reasons) if rec.ng_reasons else "各项质检指标完全合格"
+            reasons = "、".join(rec.ng_reasons) if rec.ng_reasons else "各项指标完全合格"
             item_status.setToolTip(
-                f"【最终判废结论】: {rec.status}\n"
+                f"【最终判定结果】: {rec.status}\n"
                 f"• 判定原因: {reasons}"
             )
 

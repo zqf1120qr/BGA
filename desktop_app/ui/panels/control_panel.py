@@ -45,7 +45,7 @@ class ControlActionPanel(QFrame):
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(8)
 
         # ==========================================================
         # 1. 顶部卡片：待检工件与图像输入 (Card 1)
@@ -53,10 +53,10 @@ class ControlActionPanel(QFrame):
         self.card_image = QFrame()
         self.card_image.setObjectName("ImageCard")
         card_image_layout = QVBoxLayout(self.card_image)
-        card_image_layout.setContentsMargins(12, 12, 12, 12)
-        card_image_layout.setSpacing(10)
+        card_image_layout.setContentsMargins(12, 10, 12, 10)
+        card_image_layout.setSpacing(8)
 
-        lbl_data = QLabel("待检工件与图像输入")
+        lbl_data = QLabel("待检图像与板卡导入")
         lbl_data.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 4px 0;")
         card_image_layout.addWidget(lbl_data)
 
@@ -67,7 +67,7 @@ class ControlActionPanel(QFrame):
         self.btn_open_img.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_open_img.clicked.connect(self._select_image_file)
 
-        self.btn_open_dir = QPushButton("批量质检目录")
+        self.btn_open_dir = QPushButton("批量检测目录")
         self.btn_open_dir.setMinimumHeight(32)
         self.btn_open_dir.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_open_dir.clicked.connect(self._select_folder)
@@ -89,7 +89,7 @@ class ControlActionPanel(QFrame):
             l.setStyleSheet("color: #94a3b8; font-size: 11px;")
             return l
 
-        file_grid.addWidget(_mk_key("当前工件:"), 0, 0)
+        file_grid.addWidget(_mk_key("当前板卡/图片:"), 0, 0)
         self.lbl_current_file = QLabel("(未加载)")
         self.lbl_current_file.setStyleSheet("color: #f1f5f9; font-weight: bold; font-size: 12px;")
         file_grid.addWidget(self.lbl_current_file, 0, 1)
@@ -99,15 +99,10 @@ class ControlActionPanel(QFrame):
         self.lbl_file_dim.setStyleSheet("color: #38bdf8; font-weight: bold; font-size: 12px;")
         file_grid.addWidget(self.lbl_file_dim, 1, 1)
 
-        file_grid.addWidget(_mk_key("计算硬件:"), 2, 0)
-        self.lbl_hw_info = QLabel("● 正在探测...")
-        self.lbl_hw_info.setStyleSheet("color: #10b981; font-weight: bold; font-size: 12px;")
-        file_grid.addWidget(self.lbl_hw_info, 2, 1)
-
         card_image_layout.addWidget(file_card)
 
         # 裁剪交互控制
-        self.btn_crop = QPushButton("矩形区域交互裁剪 (ROI)")
+        self.btn_crop = QPushButton("框选局部区域裁剪 (ROI)")
         self.btn_crop.setMinimumHeight(32)
         self.btn_crop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_crop.clicked.connect(self._on_enter_crop)
@@ -136,7 +131,7 @@ class ControlActionPanel(QFrame):
         self.crop_action_frame.hide()
         card_image_layout.addWidget(self.crop_action_frame)
 
-        self.btn_reset_img = QPushButton("撤销裁剪恢复全图")
+        self.btn_reset_img = QPushButton("恢复完整大图")
         self.btn_reset_img.setMinimumHeight(32)
         self.btn_reset_img.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_reset_img.clicked.connect(self.sig_reset_image.emit)
@@ -159,7 +154,7 @@ class ControlActionPanel(QFrame):
         self.card_action = QFrame()
         self.card_action.setObjectName("ActionCard")
         action_layout = QVBoxLayout(self.card_action)
-        action_layout.setContentsMargins(12, 12, 12, 12)
+        action_layout.setContentsMargins(12, 10, 12, 10)
         action_layout.setSpacing(8)
 
         self.btn_start = QPushButton("开始执行质检任务")
@@ -179,12 +174,12 @@ class ControlActionPanel(QFrame):
 
         btn_row_rep = QHBoxLayout()
         btn_row_rep.setSpacing(8)
-        self.btn_export_pdf = QPushButton("导出 PDF 质检单")
+        self.btn_export_pdf = QPushButton("导出 PDF 报告")
         self.btn_export_pdf.setMinimumHeight(32)
         self.btn_export_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_pdf.clicked.connect(self.sig_export_pdf.emit)
 
-        self.btn_export_excel = QPushButton("导出 Excel 明细表")
+        self.btn_export_excel = QPushButton("导出 Excel 报表")
         self.btn_export_excel.setMinimumHeight(32)
         self.btn_export_excel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_excel.clicked.connect(self.sig_export_excel.emit)
@@ -196,8 +191,7 @@ class ControlActionPanel(QFrame):
         main_layout.addWidget(self.card_action)
 
     def _on_hardware_updated(self, status_text: str, color: str):
-        self.lbl_hw_info.setText(f"● {status_text}")
-        self.lbl_hw_info.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 12px;")
+        pass
 
     def set_current_filename(self, name: str, width: int = 0, height: int = 0):
         self.lbl_current_file.setText(name)

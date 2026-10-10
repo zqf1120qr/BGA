@@ -27,7 +27,7 @@ class ResultSummaryPanel(QFrame):
         layout.setSpacing(10)
 
         # 1. 顶部标题
-        lbl_head = QLabel("质检判定结果看板")
+        lbl_head = QLabel("检测结果判定看板")
         lbl_head.setStyleSheet("font-weight: 700; font-size: 13px; color: #f1f5f9; padding: 2px 0 4px 0;")
         layout.addWidget(lbl_head)
 
@@ -42,7 +42,7 @@ class ResultSummaryPanel(QFrame):
         self.lbl_big_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_big_status.setStyleSheet("font-size: 26px; font-weight: 900; letter-spacing: 2px;")
 
-        self.lbl_sub_status = QLabel("等待质检任务...")
+        self.lbl_sub_status = QLabel("等待执行检测...")
         self.lbl_sub_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_sub_status.setStyleSheet("font-size: 12px; color: #94a3b8;")
 
@@ -75,19 +75,19 @@ class ResultSummaryPanel(QFrame):
             l.setStyleSheet("color: #94a3b8; font-size: 11px;")
             return l
 
-        grid.addWidget(_mk_key("有效焊球总数:"), 0, 0)
+        grid.addWidget(_mk_key("检测焊球总数:"), 0, 0)
         grid.addWidget(self.val_total, 0, 1)
 
-        grid.addWidget(_mk_key("气泡超标缺陷:"), 1, 0)
+        grid.addWidget(_mk_key("气泡超标焊点:"), 1, 0)
         grid.addWidget(self.val_void_ng, 1, 1)
 
-        grid.addWidget(_mk_key("桥连短路缺陷:"), 2, 0)
+        grid.addWidget(_mk_key("桥连短路对数:"), 2, 0)
         grid.addWidget(self.val_bridge, 2, 1)
 
-        grid.addWidget(_mk_key("虚焊少锡缺陷:"), 3, 0)
+        grid.addWidget(_mk_key("虚焊少锡焊点:"), 3, 0)
         grid.addWidget(self.val_insuff, 3, 1)
 
-        grid.addWidget(_mk_key("全流程总耗时:"), 4, 0)
+        grid.addWidget(_mk_key("本次检测用时:"), 4, 0)
         grid.addWidget(self.val_time, 4, 1)
 
         layout.addWidget(grid_frame)
@@ -103,7 +103,7 @@ class ResultSummaryPanel(QFrame):
             """)
             self.lbl_big_status.setText("● PASS")
             self.lbl_big_status.setStyleSheet("color: #ffffff; font-size: 26px; font-weight: 900;")
-            self.lbl_sub_status.setText("整板质检合格 (符合 IPC 工业标准)")
+            self.lbl_sub_status.setText("整板检测合格 (符合质量标准)")
             self.lbl_sub_status.setStyleSheet("color: #a7f3d0; font-size: 11px;")
         elif status == "NG":
             self.card_status.setStyleSheet("""
@@ -113,9 +113,9 @@ class ResultSummaryPanel(QFrame):
                     border: 1px solid #f43f5e;
                 }
             """)
-            self.lbl_big_status.setText("● NG 异常")
+            self.lbl_big_status.setText("● NG 不良")
             self.lbl_big_status.setStyleSheet("color: #ffffff; font-size: 26px; font-weight: 900;")
-            self.lbl_sub_status.setText("检出不合格缺陷，需人工复核")
+            self.lbl_sub_status.setText("检出不良焊点，需人工复核")
             self.lbl_sub_status.setStyleSheet("color: #fecdd3; font-size: 11px;")
         else:
             self.card_status.setStyleSheet("""

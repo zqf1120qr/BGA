@@ -98,7 +98,7 @@ def export_inspection_pdf(
     )
 
     # 1. 主标题
-    story.append(Paragraph("🌟 BGA 智能工业质检分析检验单", style_title))
+    story.append(Paragraph("BGA 工业检测分析报告单", style_title))
 
     # 2. 基础信息与整板大判定栏
     board_status = summary_stats.get("board_status", "UNKNOWN")
@@ -110,12 +110,12 @@ def export_inspection_pdf(
     info_data = [
         [
             Paragraph(f"<b>待测图片:</b> {image_name}", style_cell),
-            Paragraph(f"<b>检测模式:</b> 全项综合质检 (气泡+桥连+虚焊)", style_cell),
+            Paragraph(f"<b>检测模式:</b> 全项综合检测 (气泡+连锡+虚焊)", style_cell),
             Paragraph(f"<b>整板最终判定:</b>", style_cell_bold),
         ],
         [
             Paragraph(f"<b>检验时间:</b> {now_str}", style_cell),
-            Paragraph(f"<b>质检耗时:</b> {summary_stats.get('elapsed_ms', 0.0):.1f} ms", style_cell),
+            Paragraph(f"<b>检测用时:</b> {summary_stats.get('elapsed_ms', 0.0):.1f} ms", style_cell),
             Paragraph(f"<font color='{status_color.hexval()}'><b>{board_status}</b></font>", style_title),
         ],
     ]
@@ -133,13 +133,13 @@ def export_inspection_pdf(
     story.append(Spacer(1, 10))
 
     # 3. 汇总统计指标表格
-    story.append(Paragraph("【多维质检指标统计】", style_h2))
+    story.append(Paragraph("【多维指标统计】", style_h2))
     v_ng = summary_stats.get("void_ng_count", 0)
     b_ng = summary_stats.get("bridge_count", 0)
     i_ng = summary_stats.get("insufficient_count", 0)
 
     stats_data = [
-        ["有效焊球总数", "气泡超标数", "桥连短路数", "虚焊少锡数", "最大气泡率", "最大面积缩减比"],
+        ["检测焊球总数", "气泡超标焊点", "桥连短路对数", "虚焊少锡焊点", "最大气泡占比", "最大少锡缩减率"],
         [
             str(summary_stats.get("total_solders", 0)),
             f"{v_ng} 处" if v_ng > 0 else "0 (合格)",
@@ -165,7 +165,7 @@ def export_inspection_pdf(
 
     # 4. 嵌入质检全景标注图像 (若存在)
     if preview_img_path and os.path.exists(preview_img_path):
-        story.append(Paragraph("【全景质检标注图】", style_h2))
+        story.append(Paragraph("【全景检测标注图】", style_h2))
         try:
             # 缩放到合适尺寸
             img_item = Image(preview_img_path, width=15 * cm, height=9 * cm, kind="proportional")
@@ -175,18 +175,18 @@ def export_inspection_pdf(
             print(f"[WARN] 无法嵌入 PDF 图像: {e}")
 
     # 5. 缺陷明细表 (仅展示 NG 异常项)
-    story.append(Paragraph("【不合格缺陷焊球明细 (NG List)】", style_h2))
+    story.append(Paragraph("【不良焊点明细清单 (NG List)】", style_h2))
     defect_records = [r for r in records if r.is_ng]
     
     if defect_records:
-        defect_data = [["序号", "中心坐标(X, Y)", "气泡空洞率", "面积偏离度", "桥连短路", "判废原因"]]
+        defect_data = [["序号", "中心坐标(X, Y)", "气泡占比", "少锡缩减率", "桥连短路", "不良原因"]]
         for r in defect_records[:25]:  # 最多展示前25项
             defect_data.append([
                 f"#{r.index}",
                 f"({r.cx:.1f}, {r.cy:.1f})",
                 f"{r.void_rate * 100:.1f}%",
                 f"-{r.reduction_percent:.1f}%" if r.reduction_percent > 0 else "0.0%",
-                "⚠️短路" if r.is_bridge else "正常",
+                "桥连短路NG" if r.is_bridge else "正常",
                 ", ".join(r.ng_reasons) if r.ng_reasons else "异常",
             ])
         t_defect = Table(defect_data, colWidths=[1.8 * cm, 3.2 * cm, 2.5 * cm, 2.5 * cm, 2.2 * cm, 5.8 * cm])
@@ -203,7 +203,7 @@ def export_inspection_pdf(
         ]))
         story.append(t_defect)
     else:
-        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何气泡、桥连或虚焊缺陷，整板符合 IPC 标准。</b></font>", style_cell_bold))
+        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何气泡、桥连或少锡缺陷，整板符合工业质量标准。</b></font>", style_cell_bold))
 
     story.append(Spacer(1, 15))
 

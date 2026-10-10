@@ -45,7 +45,7 @@ def export_inspection_excel(
         bottom=Side(style="thin", color="CBD5E1"),
     )
 
-    ws_summary["A1"] = "🌟 BGA 智能工业质检分析报表"
+    ws_summary["A1"] = "BGA 工业检测分析报表"
     ws_summary["A1"].font = font_title
     ws_summary.merge_cells("A1:D1")
 
@@ -54,13 +54,13 @@ def export_inspection_excel(
         ("检测图片名称", image_name),
         ("报告导出时间", now_str),
         ("整板最终判定", summary_stats.get("board_status", "UNKNOWN")),
-        ("焊球总数 (Total)", summary_stats.get("total_solders", 0)),
-        ("气泡超标缺陷数", summary_stats.get("void_ng_count", 0)),
-        ("桥连短路缺陷数", summary_stats.get("bridge_count", 0)),
-        ("虚焊少锡缺陷数", summary_stats.get("insufficient_count", 0)),
-        ("最大气泡空洞率", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
-        ("最大面积偏离度", f"-{summary_stats.get('max_reduction_percent', 0.0):.2f}%"),
-        ("质检耗时 (ms)", f"{summary_stats.get('elapsed_ms', 0.0):.1f}"),
+        ("检测焊球总数", summary_stats.get("total_solders", 0)),
+        ("气泡超标焊点数", summary_stats.get("void_ng_count", 0)),
+        ("桥连短路对数", summary_stats.get("bridge_count", 0)),
+        ("虚焊少锡焊点数", summary_stats.get("insufficient_count", 0)),
+        ("最大气泡占比", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
+        ("最大少锡缩减率", f"-{summary_stats.get('max_reduction_percent', 0.0):.2f}%"),
+        ("检测用时 (ms)", f"{summary_stats.get('elapsed_ms', 0.0):.1f}"),
     ]
 
     for idx, (k, v) in enumerate(summary_rows, start=3):
@@ -81,7 +81,7 @@ def export_inspection_excel(
 
     headers = [
         "焊球序号", "中心X坐标(px)", "中心Y坐标(px)", "实测半径(px)",
-        "气泡占比(%)", "少锡面积偏离(%)", "桥连短路状态", "检出置信度(%)", "单点结论"
+        "气泡占比(%)", "少锡缩减率(%)", "桥连短路状态", "识别可靠度(%)", "单点结论"
     ]
     ws_details.append(headers)
 
@@ -100,7 +100,7 @@ def export_inspection_excel(
             round(rec.radius, 1),
             round(rec.void_rate * 100, 2),
             round(-rec.reduction_percent, 2) if rec.reduction_percent > 0 else 0.0,
-            "⚠️短路" if rec.is_bridge else "正常",
+            "桥连短路NG" if rec.is_bridge else "正常",
             round(rec.confidence * 100, 1),
             rec.status,
         ]
