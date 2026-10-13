@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 质检数据 Excel 结构化报表生成器 (Excel Reporter)
+BGA 质检数据 Excel 结构化报表生成器 (Excel Reporter)
 -------------------------------------------------------
-将整板质检汇总指标及所有焊点的几何坐标、气泡率、虚焊比、短路状态导出为美观的 .xlsx 表格。
+将整板质检汇总指标及所有焊点的几何坐标、空洞率、虚焊比、短路状态导出为美观的 .xlsx 表格。
 """
 from __future__ import annotations
 
@@ -55,10 +55,10 @@ def export_inspection_excel(
         ("报告导出时间", now_str),
         ("整板最终判定", summary_stats.get("board_status", "UNKNOWN")),
         ("焊球总数 (Total)", summary_stats.get("total_solders", 0)),
-        ("气泡超标缺陷数", summary_stats.get("void_ng_count", 0)),
+        ("空洞超标缺陷数", summary_stats.get("void_ng_count", 0)),
         ("桥连短路缺陷数", summary_stats.get("bridge_count", 0)),
         ("虚焊少锡缺陷数", summary_stats.get("insufficient_count", 0)),
-        ("最大气泡空洞率", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
+        ("最大空洞率", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
         ("最大面积偏离度", f"-{summary_stats.get('max_reduction_percent', 0.0):.2f}%"),
         ("质检耗时 (ms)", f"{summary_stats.get('elapsed_ms', 0.0):.1f}"),
     ]
@@ -81,7 +81,7 @@ def export_inspection_excel(
 
     headers = [
         "焊球序号", "中心X坐标(px)", "中心Y坐标(px)", "实测半径(px)",
-        "气泡占比(%)", "少锡面积偏离(%)", "桥连短路状态", "检出置信度(%)", "单点结论"
+        "空洞占比(%)", "少锡面积偏离(%)", "桥连短路状态", "检出置信度(%)", "单点结论"
     ]
     ws_details.append(headers)
 

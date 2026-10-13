@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 质检判定看板与汇总统计卡片 (Result Summary Panel)
+质检判定看板与汇总统计卡片 (Result Summary Panel)
 ----------------------------------------------------
 纯工程风格，无 Emoji，高对比度呈现 PASS / NG 状态与多维统计指标。
 """
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from desktop_app.ui.styles.color_palette import DefectColors
 
 
 class ResultSummaryPanel(QFrame):
@@ -64,9 +66,10 @@ class ResultSummaryPanel(QFrame):
         self.val_void_ng = QLabel("0")
         self.val_bridge = QLabel("0")
         self.val_insuff = QLabel("0")
+        self.val_manual_cleared = QLabel("0")
         self.val_time = QLabel("0.0 ms")
 
-        for lbl in (self.val_total, self.val_void_ng, self.val_bridge, self.val_insuff, self.val_time):
+        for lbl in (self.val_total, self.val_void_ng, self.val_bridge, self.val_insuff, self.val_manual_cleared, self.val_time):
             lbl.setStyleSheet("font-weight: bold; font-size: 13px; color: #f8fafc;")
 
         # 添加网格项
@@ -78,7 +81,7 @@ class ResultSummaryPanel(QFrame):
         grid.addWidget(_mk_key("检测焊球总数:"), 0, 0)
         grid.addWidget(self.val_total, 0, 1)
 
-        grid.addWidget(_mk_key("气泡超标焊点:"), 1, 0)
+        grid.addWidget(_mk_key("空洞超标焊点:"), 1, 0)
         grid.addWidget(self.val_void_ng, 1, 1)
 
         grid.addWidget(_mk_key("桥连短路对数:"), 2, 0)
@@ -87,8 +90,11 @@ class ResultSummaryPanel(QFrame):
         grid.addWidget(_mk_key("虚焊少锡焊点:"), 3, 0)
         grid.addWidget(self.val_insuff, 3, 1)
 
-        grid.addWidget(_mk_key("本次检测用时:"), 4, 0)
-        grid.addWidget(self.val_time, 4, 1)
+        grid.addWidget(_mk_key("排除误检(复核):"), 4, 0)
+        grid.addWidget(self.val_manual_cleared, 4, 1)
+
+        grid.addWidget(_mk_key("本次检测用时:"), 5, 0)
+        grid.addWidget(self.val_time, 5, 1)
 
         layout.addWidget(grid_frame)
 
@@ -101,10 +107,22 @@ class ResultSummaryPanel(QFrame):
                     border: 1px solid #10b981;
                 }
             """)
-            self.lbl_big_status.setText("● PASS")
+            self.lbl_big_status.setText("PASS")
             self.lbl_big_status.setStyleSheet("color: #ffffff; font-size: 26px; font-weight: 900;")
             self.lbl_sub_status.setText("整板检测合格 (符合质量标准)")
             self.lbl_sub_status.setStyleSheet("color: #a7f3d0; font-size: 11px;")
+        elif "PASS (人工复核)" in status or status == "PASS_REVIEWED":
+            self.card_status.setStyleSheet("""
+                QFrame#StatusCard {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e7490, stop:1 #0891b2);
+                    border-radius: 8px;
+                    border: 1px solid #06b6d4;
+                }
+            """)
+            self.lbl_big_status.setText("PASS (复核)")
+            self.lbl_big_status.setStyleSheet("color: #ffffff; font-size: 24px; font-weight: 900;")
+            self.lbl_sub_status.setText("检出缺陷均已人工核验排除，整板判定合格")
+            self.lbl_sub_status.setStyleSheet("color: #cffafe; font-size: 11px;")
         elif status == "NG":
             self.card_status.setStyleSheet("""
                 QFrame#StatusCard {
@@ -113,7 +131,7 @@ class ResultSummaryPanel(QFrame):
                     border: 1px solid #f43f5e;
                 }
             """)
-            self.lbl_big_status.setText("● NG 不良")
+            self.lbl_big_status.setText("NG 不良")
             self.lbl_big_status.setStyleSheet("color: #ffffff; font-size: 26px; font-weight: 900;")
             self.lbl_sub_status.setText("检出不良焊点，需人工复核")
             self.lbl_sub_status.setStyleSheet("color: #fecdd3; font-size: 11px;")
@@ -138,19 +156,33 @@ class ResultSummaryPanel(QFrame):
 
         v_ng = stats.get("void_ng_count", 0)
         self.val_void_ng.setText(str(v_ng))
-        self.val_void_ng.setStyleSheet("color: #f43f5e; font-weight: bold;" if v_ng > 0 else "color: #10b981;")
+        self.val_void_ng.setStyleSheet(f"color: {DefectColors.VOID_NG_HEX}; font-weight: bold;" if v_ng > 0 else f"color: {DefectColors.NORMAL_HEX};")
 
         b_ng = stats.get("bridge_count", 0)
         self.val_bridge.setText(str(b_ng))
-        self.val_bridge.setStyleSheet("color: #ef4444; font-weight: bold;" if b_ng > 0 else "color: #10b981;")
+        self.val_bridge.setStyleSheet(f"color: {DefectColors.BRIDGE_NG_HEX}; font-weight: bold;" if b_ng > 0 else f"color: {DefectColors.NORMAL_HEX};")
 
         i_ng = stats.get("insufficient_count", 0)
         self.val_insuff.setText(str(i_ng))
-        self.val_insuff.setStyleSheet("color: #fb923c; font-weight: bold;" if i_ng > 0 else "color: #10b981;")
+        self.val_insuff.setStyleSheet(f"color: {DefectColors.INSUFF_NG_HEX}; font-weight: bold;" if i_ng > 0 else f"color: {DefectColors.NORMAL_HEX};")
+
+        # 人工排除误检数
+        cleared = stats.get("manual_cleared_count", 0)
+        self.val_manual_cleared.setText(str(cleared))
+        self.val_manual_cleared.setStyleSheet(
+            f"color: {DefectColors.REVIEW_PASS_HEX}; font-weight: bold;" if cleared > 0 else "color: #94a3b8;"
+        )
 
         self.val_time.setText(f"{stats.get('elapsed_ms', 0.0):.1f} ms")
 
-        # 详细缺陷原因提示
+        # 详细缺陷原因提示 (自动反映当前有效原因及已排除误检信息)
         reasons = stats.get("ng_reasons", [])
-        if reasons and status == "NG":
-            self.lbl_sub_status.setText(" | ".join(reasons[:2]))
+        if status == "NG":
+            if reasons:
+                sub_txt = " | ".join(reasons[:2])
+                if cleared > 0:
+                    sub_txt += f" (已排除 {cleared} 处误检)"
+                self.lbl_sub_status.setText(sub_txt)
+            else:
+                self.lbl_sub_status.setText("检出不良焊点，待处理")
+

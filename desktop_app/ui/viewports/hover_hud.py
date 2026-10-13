@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 焊点悬停浮动数据微探针 (Hover HUD Tooltip)
+焊点悬停浮动数据微探针 (Hover HUD Tooltip)
 --------------------------------------------
 1. 严格吸附于当前焊点正上方 (正对球心，距离球顶 6px)；
 2. 若靠近视口顶边缘空间不足，智能自适应翻转至焊点正下方；
@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.ui.styles.color_palette import DefectColors
+
 
 class HoverHudWidget(QFrame):
     """半透明浮动数据微探针卡片 (精准吸附于当前焊点上方)"""
@@ -30,18 +32,18 @@ class HoverHudWidget(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self.setObjectName("HoverHudCard")
-        self.setStyleSheet("""
-            QFrame#HoverHudCard {
+        self.setStyleSheet(f"""
+            QFrame#HoverHudCard {{
                 background-color: #0b0f19;
-                border: 1.5px solid #38bdf8;
+                border: 1.5px solid {DefectColors.CONF_HEX};
                 border-radius: 6px;
                 padding: 4px;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 color: #f1f5f9;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 font-size: 11px;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -59,8 +61,8 @@ class HoverHudWidget(QFrame):
         header_layout.addStretch()
 
         self.lbl_status_badge = QLabel("PASS")
-        self.lbl_status_badge.setStyleSheet("""
-            background-color: #10b981;
+        self.lbl_status_badge.setStyleSheet(f"""
+            background-color: {DefectColors.NORMAL_HEX};
             color: #ffffff;
             font-weight: bold;
             font-size: 10px;
@@ -71,7 +73,7 @@ class HoverHudWidget(QFrame):
         layout.addLayout(header_layout)
 
         # 指标明细项
-        self.lbl_void = QLabel("• 气泡占比: 0.0%")
+        self.lbl_void = QLabel("• 空洞占比: 0.0%")
         self.lbl_insuff = QLabel("• 少锡缩减率: 0.0%")
         self.lbl_bridge = QLabel("• 桥连短路: 正常")
         self.lbl_coord = QLabel("• 中心坐标: (0, 0)")
@@ -96,14 +98,26 @@ class HoverHudWidget(QFrame):
         reduction_percent: float,
         is_insuff: bool,
         is_bridge: bool,
+        is_reviewed: bool = False,
+        review_reason: str = "",
     ):
         self.lbl_title.setText(f"#{index} 号焊球")
 
         # 状态 Badge 颜色
-        if status == "NG":
+        if is_reviewed:
+            self.lbl_status_badge.setText("PASS (复核)")
+            self.lbl_status_badge.setStyleSheet(f"""
+                background-color: {DefectColors.REVIEW_PASS_HEX};
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 10px;
+                padding: 1px 5px;
+                border-radius: 3px;
+            """)
+        elif status == "NG":
             self.lbl_status_badge.setText("NG 不良")
-            self.lbl_status_badge.setStyleSheet("""
-                background-color: #f43f5e;
+            self.lbl_status_badge.setStyleSheet(f"""
+                background-color: {DefectColors.VOID_NG_HEX};
                 color: #ffffff;
                 font-weight: bold;
                 font-size: 10px;
@@ -112,8 +126,8 @@ class HoverHudWidget(QFrame):
             """)
         else:
             self.lbl_status_badge.setText("PASS 合格")
-            self.lbl_status_badge.setStyleSheet("""
-                background-color: #10b981;
+            self.lbl_status_badge.setStyleSheet(f"""
+                background-color: {DefectColors.NORMAL_HEX};
                 color: #ffffff;
                 font-weight: bold;
                 font-size: 10px;
@@ -121,28 +135,38 @@ class HoverHudWidget(QFrame):
                 border-radius: 3px;
             """)
 
-        # 气泡指标
-        void_color = "#f43f5e" if is_void_ng else "#38bdf8"
-        void_text = f"• 气泡占比: <b style='color:{void_color}'>{void_rate * 100:.1f}%</b>"
+        # 空洞指标
+        void_color = DefectColors.VOID_NG_HEX if is_void_ng else DefectColors.CONF_HEX
+        void_text = f"• 空洞占比: <b style='color:{void_color}'>{void_rate * 100:.1f}%</b>"
         if is_void_ng:
-            void_text += " <span style='color:#f43f5e;font-size:10px;'>(超标)</span>"
+            if is_reviewed:
+                void_text += f" <span style='color:{DefectColors.REVIEW_PASS_HEX};font-size:10px;'>(误检已排除)</span>"
+            else:
+                void_text += f" <span style='color:{DefectColors.VOID_NG_HEX};font-size:10px;'>(超标)</span>"
         self.lbl_void.setText(void_text)
 
         # 虚焊指标
-        insuff_color = "#f59e0b" if is_insuff else "#94a3b8"
+        insuff_color = DefectColors.INSUFF_NG_HEX if is_insuff else "#94a3b8"
         insuff_text = f"• 少锡缩减率: <b style='color:{insuff_color}'>-{reduction_percent:.1f}%</b>"
         if is_insuff:
-            insuff_text += " <span style='color:#f59e0b;font-size:10px;'>(偏小)</span>"
+            if is_reviewed:
+                insuff_text += f" <span style='color:{DefectColors.REVIEW_PASS_HEX};font-size:10px;'>(误检已排除)</span>"
+            else:
+                insuff_text += f" <span style='color:{DefectColors.INSUFF_NG_HEX};font-size:10px;'>(偏小)</span>"
         self.lbl_insuff.setText(insuff_text)
 
         # 桥连指标
         if is_bridge:
-            self.lbl_bridge.setText("• 桥连短路: <b style='color:#f43f5e'>[短路不良]</b>")
+            if is_reviewed:
+                self.lbl_bridge.setText(f"• 桥连短路: <span style='color:{DefectColors.REVIEW_PASS_HEX}'>[假短路已排除]</span>")
+            else:
+                self.lbl_bridge.setText(f"• 桥连短路: <b style='color:{DefectColors.BRIDGE_NG_HEX}'>[短路不良]</b>")
         else:
-            self.lbl_bridge.setText("• 桥连短路: <span style='color:#10b981'>正常</span>")
+            self.lbl_bridge.setText(f"• 桥连短路: <span style='color:{DefectColors.NORMAL_HEX}'>正常</span>")
 
         self.lbl_coord.setText(f"• 中心坐标: ({cx:.1f}, {cy:.1f})")
         self.adjustSize()
+
 
     def show_above_ball(self, center_view: QPointF, radius_view: float, viewport_size: QSize):
         """将 HUD 卡片精确对准焊球球心，垂直悬浮在当前焊点正上方"""

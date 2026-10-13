@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 工业级 PDF 质检单报表生成器 (PDF Reporter)
+BGA 工业级 PDF 质检单报表生成器 (PDF Reporter)
 -------------------------------------------------
 使用 reportlab 渲染规范的 A4 工业质检报告单：
 1. 包含工单标题、检测时间与整板 PASS / NG 鲜明大印章；
@@ -107,13 +107,20 @@ def export_inspection_pdf(
     board_status = summary_stats.get("board_status", "UNKNOWN")
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    status_color = colors.HexColor("#16a34a") if board_status == "PASS" else colors.HexColor("#dc2626")
-    status_bg = colors.HexColor("#dcfce7") if board_status == "PASS" else colors.HexColor("#fee2e2")
+    if board_status == "PASS":
+        status_color = colors.HexColor("#16a34a")
+        status_bg = colors.HexColor("#dcfce7")
+    elif "PASS (人工复核)" in board_status or "PASS" in board_status:
+        status_color = colors.HexColor("#0891b2")
+        status_bg = colors.HexColor("#cffafe")
+    else:
+        status_color = colors.HexColor("#dc2626")
+        status_bg = colors.HexColor("#fee2e2")
 
     info_data = [
         [
             Paragraph(f"<b>待测图片:</b> {image_name}", style_cell),
-            Paragraph(f"<b>检测模式:</b> 全项综合检测 (气泡+连锡+虚焊)", style_cell),
+            Paragraph(f"<b>检测模式:</b> 全项综合检测 (空洞+连锡+虚焊)", style_cell),
             Paragraph(f"<b>整板最终判定:</b>", style_cell_bold),
         ],
         [
@@ -140,16 +147,17 @@ def export_inspection_pdf(
     v_ng = summary_stats.get("void_ng_count", 0)
     b_ng = summary_stats.get("bridge_count", 0)
     i_ng = summary_stats.get("insufficient_count", 0)
+    c_rev = summary_stats.get("manual_cleared_count", 0)
 
     stats_data = [
-        ["检测焊球总数", "气泡超标焊点", "桥连短路对数", "虚焊少锡焊点", "最大气泡占比", "最大少锡缩减率"],
+        ["检测焊球数", "空洞超标", "桥连短路", "虚焊少锡", "排除误检(复核)", "最大空洞比"],
         [
             str(summary_stats.get("total_solders", 0)),
-            f"{v_ng} 处" if v_ng > 0 else "0 (合格)",
-            f"{b_ng} 处" if b_ng > 0 else "0 (合格)",
-            f"{i_ng} 处" if i_ng > 0 else "0 (合格)",
+            f"{v_ng} 处" if v_ng > 0 else "0",
+            f"{b_ng} 处" if b_ng > 0 else "0",
+            f"{i_ng} 处" if i_ng > 0 else "0",
+            f"{c_rev} 处" if c_rev > 0 else "0",
             f"{summary_stats.get('max_void_rate', 0.0) * 100:.1f}%",
-            f"-{summary_stats.get('max_reduction_percent', 0.0):.1f}%",
         ],
     ]
     t_stats = Table(stats_data, colWidths=[3.0 * cm] * 6)
@@ -166,6 +174,7 @@ def export_inspection_pdf(
     story.append(t_stats)
     story.append(Spacer(1, 10))
 
+
     # 4. 嵌入质检全景标注图像 (若存在)
     if preview_img_path and os.path.exists(preview_img_path):
         story.append(Paragraph("【全景检测标注图】", style_h2))
@@ -177,13 +186,15 @@ def export_inspection_pdf(
         except Exception as e:
             print(f"[WARN] 无法嵌入 PDF 图像: {e}")
 
-    # 5. 缺陷明细表 (仅展示 NG 异常项)
-    story.append(Paragraph("【不良焊点明细清单 (NG List)】", style_h2))
+    # 5. 缺陷明细表 (包含 AI 检出异常与人工复核审计结果)
+    story.append(Paragraph("【不良与复核焊点明细清单】", style_h2))
     defect_records = [r for r in records if r.is_ng]
     
     if defect_records:
-        defect_data = [["序号", "中心坐标(X, Y)", "气泡占比", "少锡缩减率", "桥连短路", "不良原因"]]
+        defect_data = [["序号", "中心坐标(X, Y)", "空洞占比", "少锡缩减", "桥连短路", "初始原因", "最终结论"]]
         for r in defect_records[:25]:  # 最多展示前25项
+            is_rev = (r.is_manually_reviewed and r.manual_status == "PASS")
+            concl = "已排除误检(PASS)" if is_rev else "NG 不良"
             defect_data.append([
                 f"#{r.index}",
                 f"({r.cx:.1f}, {r.cy:.1f})",
@@ -191,9 +202,10 @@ def export_inspection_pdf(
                 f"-{r.reduction_percent:.1f}%" if r.reduction_percent > 0 else "0.0%",
                 "桥连短路NG" if r.is_bridge else "正常",
                 ", ".join(r.ng_reasons) if r.ng_reasons else "异常",
+                concl,
             ])
-        t_defect = Table(defect_data, colWidths=[1.8 * cm, 3.2 * cm, 2.5 * cm, 2.5 * cm, 2.2 * cm, 5.8 * cm])
-        t_defect.setStyle(TableStyle([
+        t_defect = Table(defect_data, colWidths=[1.6 * cm, 2.8 * cm, 2.2 * cm, 2.2 * cm, 2.2 * cm, 4.0 * cm, 3.0 * cm])
+        t_defect_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#475569")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -202,11 +214,17 @@ def export_inspection_pdf(
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#fff1f2")), # 淡红色背景
-        ]))
+        ]
+        for row_i, r in enumerate(defect_records[:25], start=1):
+            if r.is_manually_reviewed and r.manual_status == "PASS":
+                t_defect_style.append(("BACKGROUND", (0, row_i), (-1, row_i), colors.HexColor("#cffafe")))  # 青蓝
+            else:
+                t_defect_style.append(("BACKGROUND", (0, row_i), (-1, row_i), colors.HexColor("#fff1f2")))  # 淡红
+
+        t_defect.setStyle(TableStyle(t_defect_style))
         story.append(t_defect)
     else:
-        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何气泡、桥连或少锡缺陷，整板符合工业质量标准。</b></font>", style_cell_bold))
+        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何空洞、桥连或少锡缺陷，整板符合工业质量标准。</b></font>", style_cell_bold))
 
     story.append(Spacer(1, 15))
 
@@ -214,7 +232,7 @@ def export_inspection_pdf(
     sign_data = [
         [
             Paragraph("<b>品质检验员 (Inspector):</b> ________________", style_cell),
-            Paragraph("<b>工艺工程师 (Engineer):</b> ________________", style_cell),
+            Paragraph("<b>人工复核员 (Reviewer):</b> ________________", style_cell),
             Paragraph("<b>审核日期 (Date):</b> ____年__月__日", style_cell),
         ]
     ]
@@ -224,5 +242,6 @@ def export_inspection_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 10),
     ]))
     story.append(t_sign)
+
 
     doc.build(story)

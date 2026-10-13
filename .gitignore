@@ -13,3 +13,6 @@ dist/
 *.log
 crash.log
 scratch/
+
+*.pdf
+settings.json

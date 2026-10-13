@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-🌟 批量质检图像胶卷式缩略图栏 (Batch Thumbnail Strip & Switcher)
+批量质检图像胶卷式缩略图栏 (Batch Thumbnail Strip & Switcher)
 ----------------------------------------------------------------
 部署于主视口中央下半部分，专用于批量质检场景：
-1. 顶部操作栏提供【◀ 上一张】、【下一张 ▶】、当前图像指示与缺陷统计芯片；
+1. 顶部操作栏提供【上一张】、【下一张】、当前图像指示与缺陷统计芯片；
 2. 底部胶卷栏横向排列每一张图片的微缩预览图、文件名与实时质检状态 (待检 / 质检中 / PASS / NG)；
 3. 支持鼠标单击缩略图切换、键盘左右方向键 (← / →) 毫秒级秒切；
 4. 选中项具备醒目亮青色外框 (#38bdf8)，自动滚动居中。
@@ -156,7 +156,7 @@ class ThumbnailCard(QFrame):
             """)
         elif status == "PASS":
             self.lbl_badge.setText("PASS")
-            self.lbl_badge.setToolTip("【当前结论: 合格 (PASS)】\n焊点气泡率、少锡指标与桥连短路检测全部通过")
+            self.lbl_badge.setToolTip("【当前结论: 合格 (PASS)】\n焊点空洞率、少锡指标与桥连短路检测全部通过")
             self.lbl_badge.setStyleSheet("""
                 background-color: #064e3b;
                 color: #34d399;
@@ -168,7 +168,7 @@ class ThumbnailCard(QFrame):
             """)
         elif status == "NG":
             self.lbl_badge.setText("NG")
-            self.lbl_badge.setToolTip("【当前结论: 缺陷 (NG)】\n存在气泡超标、虚焊少锡或桥连短路缺陷")
+            self.lbl_badge.setToolTip("【当前结论: 缺陷 (NG)】\n存在空洞超标、虚焊少锡或桥连短路缺陷")
             self.lbl_badge.setStyleSheet("""
                 background-color: #7f1d1d;
                 color: #f87171;

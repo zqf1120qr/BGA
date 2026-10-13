@@ -49,9 +49,13 @@ from desktop_app.ui.viewports.bridge_item import BridgeDefectGraphicsItem
 
 class ImageCanvasView(QGraphicsView):
     sig_ball_selected = Signal(int)           # 焊球被点击选中信号 (传递 ball_index)
+    sig_ball_review_toggled = Signal(int)     # 焊球复核切换信号 (传递 ball_index)
+    sig_bridge_review_toggled = Signal(int)   # 桥连复核切换信号 (传递 bridge_index)
     sig_crop_confirmed = Signal(tuple)        # 裁剪确认信号 (传递 (x1, y1, x2, y2))
     sig_crop_cancelled = Signal()             # 裁剪取消信号
     sig_zoom_changed = Signal(float)          # 缩放比例改变信号 (例如 1.25 即 125%)
+    sig_annotations_restored = Signal(int)    # 一键恢复所有隐藏标注信号 (传递恢复数量)
+
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -144,6 +148,7 @@ class ImageCanvasView(QGraphicsView):
                 on_clicked_callback=self._handle_ball_clicked,
                 on_hover_enter_callback=self._handle_hover_enter,
                 on_hover_leave_callback=self._handle_hover_leave,
+                on_review_toggled_callback=self.sig_ball_review_toggled.emit,
             )
             item.setZValue(10.0)
             item.set_view_mode(self.current_view_mode)
@@ -152,8 +157,12 @@ class ImageCanvasView(QGraphicsView):
             self.solder_items.append(item)
 
         # 2. 批量构建桥连短路矢量图元 (无文字、无中心连线、无填充覆盖、仅描轮廓、可调透明度、点击独立消隐)
-        for b in bridge_defects:
-            b_item = BridgeDefectGraphicsItem(b)
+        for idx, b in enumerate(bridge_defects):
+            b_item = BridgeDefectGraphicsItem(
+                bridge_data=b,
+                bridge_index=idx,
+                on_review_toggled_callback=self.sig_bridge_review_toggled.emit,
+            )
             b_item.set_view_mode(self.current_view_mode)
             b_item.set_alpha(self.current_alpha)
             self.scene.addItem(b_item)
@@ -177,21 +186,55 @@ class ImageCanvasView(QGraphicsView):
             b_item.set_alpha(alpha)
 
     def refresh_solder_items(self):
-        """通知所有焊球刷新自身重判颜色"""
+        """通知所有焊球与桥连图元刷新自身重判颜色"""
         for item in self.solder_items:
             item.update()
+        for b_item in self.bridge_items:
+            b_item.update()
 
-    def highlight_ball(self, ball_index: int, zoom_to: bool = True):
-        """在视口中高亮选中指定序号的焊球并平滑聚焦"""
+
+    def highlight_ball(self, ball_index: int, zoom_to: bool = True, min_zoom: float = 1.2):
+        """在视口中高亮选中指定序号的焊球并平滑聚焦；若 ball_index < 0 则清除选中"""
+        self._current_selected_ball_index = ball_index
+        if ball_index < 0:
+            self.clear_highlight()
+            return
+
+        target_item = None
         for item in self.solder_items:
             if item.record.index == ball_index:
                 item.set_selected_highlight(True)
-                if zoom_to:
-                    self.centerOn(item)
-                    if self.current_zoom < 1.5:
-                        self.set_zoom(1.8)
+                target_item = item
             else:
                 item.set_selected_highlight(False)
+
+        if target_item and zoom_to:
+            self.centerOn(target_item)
+            if self.current_zoom < min_zoom:
+                self.set_zoom(min_zoom)
+
+    def clear_highlight(self):
+        """清除全部焊球选中高亮与定位准星靶心"""
+        self._current_selected_ball_index = -1
+        for item in self.solder_items:
+            if item.is_selected:
+                item.set_selected_highlight(False)
+
+    def restore_all_annotations_visibility(self) -> int:
+        """一键恢复所有被手动点击隐藏/消隐的焊点与缺陷标注，返回恢复的数量"""
+        restored_count = 0
+        for item in self.solder_items:
+            if getattr(item.record, "is_user_hidden", False):
+                item.record.is_user_hidden = False
+                item.update()
+                restored_count += 1
+        for b_item in self.bridge_items:
+            if getattr(b_item, "is_user_hidden", False):
+                b_item.is_user_hidden = False
+                b_item.update()
+                restored_count += 1
+        self.viewport().update()
+        return restored_count
 
     # ==============================================================
     # ================= 🌟 [ROI 裁剪选框控制] =======================
@@ -263,6 +306,7 @@ class ImageCanvasView(QGraphicsView):
         if event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
             self._is_panning = True
             self._pan_start_pos = pos
+            self._pan_moved_total = 0
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
@@ -274,6 +318,8 @@ class ImageCanvasView(QGraphicsView):
             if not is_interactive or item in (None, self.pixmap_item):
                 self._is_panning = True
                 self._pan_start_pos = pos
+                self._pan_moved_total = 0
+                self._clicked_blank_pos = pos
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
                 event.accept()
                 return
@@ -284,6 +330,7 @@ class ImageCanvasView(QGraphicsView):
         if self._is_panning:
             pos = event.position().toPoint()
             delta = pos - self._pan_start_pos
+            self._pan_moved_total = getattr(self, "_pan_moved_total", 0) + abs(delta.x()) + abs(delta.y())
             self._pan_start_pos = pos
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
@@ -295,6 +342,11 @@ class ImageCanvasView(QGraphicsView):
         if self._is_panning:
             self._is_panning = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
+            # 若移动总位移极小（< 5px），说明用户是在空白处轻微单击，触发取消选中与准星
+            if getattr(self, "_pan_moved_total", 0) < 5 and hasattr(self, "_clicked_blank_pos"):
+                self.clear_highlight()
+                self.sig_ball_selected.emit(-1)
+            self._clicked_blank_pos = None
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -313,10 +365,24 @@ class ImageCanvasView(QGraphicsView):
                 b_item.setVisible(False)
             event.accept()
             return
+        elif event.key() == Qt.Key.Key_R and not event.isAutoRepeat():
+            # R 键快捷切换当前选中焊球的复核状态 (排除误检 / 恢复)
+            sel_idx = getattr(self, "_current_selected_ball_index", -1)
+            if sel_idx > 0:
+                self.sig_ball_review_toggled.emit(sel_idx)
+                event.accept()
+                return
+        elif event.key() == Qt.Key.Key_Escape and not event.isAutoRepeat():
+            # Esc 键：一键恢复所有被手动点击隐藏/消隐的缺陷标注显示
+            restored = self.restore_all_annotations_visibility()
+            self.sig_annotations_restored.emit(restored)
+            event.accept()
+            return
         elif event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
             event.ignore()
             return
         super().keyPressEvent(event)
+
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -411,11 +477,22 @@ class ImageCanvasView(QGraphicsView):
     # ================= 🌟 [事件回调处理] ===========================
     # ==============================================================
     def _handle_ball_clicked(self, ball_index: int):
-        self.sig_ball_selected.emit(ball_index)
+        current_sel = getattr(self, "_current_selected_ball_index", -1)
+        if current_sel == ball_index:
+            # 再次点击同一焊球：取消选中并隐藏准星 (Toggle 取消)
+            self._current_selected_ball_index = -1
+            self.clear_highlight()
+            self.sig_ball_selected.emit(-1)
+        else:
+            self._current_selected_ball_index = ball_index
+            self.highlight_ball(ball_index, zoom_to=False)
+            self.sig_ball_selected.emit(ball_index)
 
     def _handle_hover_enter(self, record: SolderBallRecord):
         center_view = self.mapFromScene(QPointF(record.cx, record.cy))
         radius_view = record.radius * self.transform().m11()
+        is_rev = (record.is_manually_reviewed and record.manual_status == "PASS") or (record.is_bridge_cleared and not record.final_is_ng)
+        rev_reason = record.review_reason or ("桥连短路误检已排除" if record.is_bridge_cleared else "")
         self.hover_hud.update_data(
             index=record.index,
             status=record.status,
@@ -426,8 +503,11 @@ class ImageCanvasView(QGraphicsView):
             reduction_percent=record.reduction_percent,
             is_insuff=record.is_insufficient,
             is_bridge=record.is_bridge,
+            is_reviewed=is_rev,
+            review_reason=rev_reason,
         )
         self.hover_hud.show_above_ball(center_view, radius_view, self.viewport().size())
+
 
     def _handle_hover_leave(self):
         self.hover_hud.hide()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 桌面工作站配置管理模块 (App Configuration)
+BGA 桌面工作站配置管理模块 (App Configuration)
 """
 from __future__ import annotations
 import json
@@ -65,12 +65,80 @@ class AppConfigManager:
             except Exception as e:
                 print(f"[WARN] 读取配置文件失败: {e}")
 
-    def save(self):
+    def save(self) -> bool:
+        """保存当前配置到 settings.json"""
         try:
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(self.config.to_dict(), f, ensure_ascii=False, indent=2)
+            return True
         except Exception as e:
             print(f"[WARN] 保存配置文件失败: {e}")
+            return False
+
+    def save_as_default(self) -> bool:
+        """将当前内存中的质检参数保存为最佳默认配置"""
+        return self.save()
+
+    def reset_to_defaults(self):
+        """恢复系统出厂基准默认质检参数"""
+        self.config.conf_threshold = 0.20
+        self.config.ng_void_threshold = 0.25
+        self.config.undersize_threshold = 0.20
+        self.config.inspection_mode = "comprehensive"
+        self.config.overlay_alpha = 1.0
+        self.config.view_mode = "all_outline"
+        self.save()
+
+    def export_recipe_json(self, export_path: str) -> bool:
+        """导出当前核心质检判废阈值与配方至指定 JSON 文件"""
+        try:
+            recipe = {
+                "format": "BGA_INSPECTOR_RECIPE_V1",
+                "description": "BGA 芯片智能工业质检工作站 - 工艺阈值配方文件",
+                "params": {
+                    "conf_threshold": round(float(self.config.conf_threshold), 4),
+                    "ng_void_threshold": round(float(self.config.ng_void_threshold), 4),
+                    "undersize_threshold": round(float(self.config.undersize_threshold), 4),
+                    "inspection_mode": self.config.inspection_mode,
+                    "area_reference_mode": self.config.area_reference_mode,
+                    "overlay_alpha": round(float(self.config.overlay_alpha), 2),
+                    "view_mode": self.config.view_mode,
+                }
+            }
+            with open(export_path, "w", encoding="utf-8") as f:
+                json.dump(recipe, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"[ERROR] 导出参数配方失败: {e}")
+            return False
+
+    def import_recipe_json(self, import_path: str) -> bool:
+        """从外部 JSON 文件载入工艺阈值配方并验证"""
+        try:
+            if not os.path.exists(import_path):
+                return False
+            with open(import_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            params = data.get("params", data)
+            if "conf_threshold" in params:
+                self.config.conf_threshold = max(0.05, min(0.95, float(params["conf_threshold"])))
+            if "ng_void_threshold" in params:
+                self.config.ng_void_threshold = max(0.01, min(0.90, float(params["ng_void_threshold"])))
+            if "undersize_threshold" in params:
+                self.config.undersize_threshold = max(0.01, min(0.90, float(params["undersize_threshold"])))
+            if "inspection_mode" in params and params["inspection_mode"] in ("comprehensive", "void", "bridge", "insufficient"):
+                self.config.inspection_mode = str(params["inspection_mode"])
+            if "overlay_alpha" in params:
+                self.config.overlay_alpha = max(0.1, min(1.0, float(params["overlay_alpha"])))
+            if "view_mode" in params:
+                self.config.view_mode = str(params["view_mode"])
+
+            self.save()
+            return True
+        except Exception as e:
+            print(f"[ERROR] 导入参数配方失败: {e}")
+            return False
 
 
 # 全局单例

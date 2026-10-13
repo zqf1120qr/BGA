@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 质检数据 Excel 结构化报表生成器 (Excel Reporter)
+BGA 质检数据 Excel 结构化报表生成器 (Excel Reporter)
 -------------------------------------------------------
-将整板质检汇总指标及所有焊点的几何坐标、气泡率、虚焊比、短路状态导出为美观的 .xlsx 表格。
+将整板质检汇总指标及所有焊点的几何坐标、空洞率、虚焊比、短路状态导出为美观的 .xlsx 表格。
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ def export_inspection_excel(
     
     fill_pass = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
     fill_ng = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    fill_rev = PatternFill(start_color="CFFAFE", end_color="CFFAFE", fill_type="solid")
     fill_header = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
     font_header = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
 
@@ -56,10 +57,11 @@ def export_inspection_excel(
         ("报告导出时间", now_str),
         ("整板最终判定", summary_stats.get("board_status", "UNKNOWN")),
         ("检测焊球总数", summary_stats.get("total_solders", 0)),
-        ("气泡超标焊点数", summary_stats.get("void_ng_count", 0)),
+        ("空洞超标焊点数", summary_stats.get("void_ng_count", 0)),
         ("桥连短路对数", summary_stats.get("bridge_count", 0)),
         ("虚焊少锡焊点数", summary_stats.get("insufficient_count", 0)),
-        ("最大气泡占比", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
+        ("人工排除误检数", summary_stats.get("manual_cleared_count", 0)),
+        ("最大空洞占比", f"{summary_stats.get('max_void_rate', 0.0) * 100:.2f}%"),
         ("最大少锡缩减率", f"-{summary_stats.get('max_reduction_percent', 0.0):.2f}%"),
         ("检测用时 (ms)", f"{summary_stats.get('elapsed_ms', 0.0):.1f}"),
     ]
@@ -73,8 +75,12 @@ def export_inspection_excel(
         val_cell.border = thin_border
 
         if k == "整板最终判定":
-            val_cell.font = Font(name="微软雅黑", size=12, bold=True, color="15803D" if v == "PASS" else "B91C1C")
-            val_cell.fill = fill_pass if v == "PASS" else fill_ng
+            is_pass = str(v).startswith("PASS")
+            val_cell.font = Font(name="微软雅黑", size=12, bold=True, color="15803D" if is_pass else "B91C1C")
+            val_cell.fill = fill_pass if is_pass else fill_ng
+        elif k == "人工排除误检数" and int(v) > 0:
+            val_cell.font = Font(name="微软雅黑", size=11, bold=True, color="0891B2")
+            val_cell.fill = fill_rev
 
     # --- Sheet 2: 焊点全量明细表 ---
     ws_details = wb.create_sheet(title="焊点全量明细")
@@ -82,7 +88,8 @@ def export_inspection_excel(
 
     headers = [
         "焊球序号", "中心X坐标(px)", "中心Y坐标(px)", "实测半径(px)",
-        "气泡占比(%)", "少锡缩减率(%)", "桥连短路状态", "识别可靠度(%)", "单点结论"
+        "空洞占比(%)", "少锡缩减率(%)", "桥连短路状态", "识别可靠度(%)",
+        "单点结论", "人工复核状态", "复核说明与时间"
     ]
     ws_details.append(headers)
 
@@ -94,6 +101,10 @@ def export_inspection_excel(
         cell.border = thin_border
 
     for rec in records:
+        is_rev = (rec.is_manually_reviewed and rec.manual_status == "PASS")
+        rev_status = "已排除误检" if is_rev else "--"
+        rev_info = f"{rec.review_reason} ({rec.review_timestamp})" if is_rev else "--"
+
         row_vals = [
             f"#{rec.index}",
             round(rec.cx, 1),
@@ -103,7 +114,9 @@ def export_inspection_excel(
             round(-rec.reduction_percent, 2) if rec.reduction_percent > 0 else 0.0,
             "桥连短路NG" if rec.is_bridge else "正常",
             round(rec.confidence * 100, 1),
-            rec.status,
+            rec.final_status,
+            rev_status,
+            rev_info,
         ]
         ws_details.append(row_vals)
         cur_row = ws_details.max_row
@@ -113,10 +126,13 @@ def export_inspection_excel(
             c.font = font_norm
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
-            if rec.is_ng:
+            if is_rev:
+                c.fill = fill_rev
+            elif rec.final_is_ng:
                 c.fill = fill_ng
             else:
                 c.fill = fill_pass
+
 
     # 自适应列宽
     for ws in (ws_summary, ws_details):

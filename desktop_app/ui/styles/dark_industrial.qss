@@ -277,10 +277,30 @@ QComboBox::down-arrow {
 QComboBox QAbstractItemView {
     background-color: #0f172a;
     border: 1px solid #334155;
-    selection-background-color: #2563eb;
+    border-radius: 6px;
+    selection-background-color: #334155;
     selection-color: #ffffff;
     color: #e2e8f0;
     padding: 4px;
+    outline: none;
+}
+
+QComboBox QAbstractItemView::item {
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #cbd5e1;
+}
+
+QComboBox QAbstractItemView::item:hover {
+    background-color: #374151;
+    color: #ffffff;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #334155;
+    color: #ffffff;
+    font-weight: bold;
 }
 
 /* 滑块 Slider */
@@ -309,16 +329,78 @@ QSlider::handle:horizontal:hover {
     border-color: #ffffff;
 }
 
-/* 单选框与复选框 (分段胶囊效果) */
+/* 顶部视图模式独立分段胶囊控制栏 (高辨识度外框，杜绝与背景混淆) */
+QFrame#ViewModeFrame {
+    background-color: #0b1120;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 1px 2px;
+}
+
+QFrame#ViewModeFrame:hover {
+    border: 1px solid #334155;
+}
+
+QFrame#ViewModeFrame QLabel {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* 视图模式单选分段区域 - 简约纯净，无突兀蓝色背景块，保持开阔舒展 */
+QFrame#ViewModeFrame QRadioButton {
+    spacing: 6px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    color: #cbd5e1;
+    background: transparent;
+    border: none;
+    padding: 2px 6px 2px 2px;
+}
+
+QFrame#ViewModeFrame QRadioButton:hover {
+    background: transparent;
+    color: #ffffff;
+}
+
+QFrame#ViewModeFrame QRadioButton:checked {
+    background: transparent;
+    border: none;
+    color: #38bdf8;
+    font-weight: 500;
+}
+
+QFrame#ViewModeFrame QRadioButton::indicator {
+    width: 12px;
+    height: 12px;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    background-color: #0b1120;
+}
+
+QFrame#ViewModeFrame QRadioButton::indicator:checked {
+    background-color: #38bdf8;
+    border: 2px solid #ffffff;
+}
+
+/* 通用单选框与复选框 */
 QRadioButton {
     spacing: 6px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
     font-size: 11px;
+    font-weight: 500;
     color: #94a3b8;
+    padding-right: 10px;
+}
+
+QRadioButton:hover {
+    color: #f1f5f9;
 }
 
 QRadioButton:checked {
     color: #38bdf8;
-    font-weight: bold;
+    font-weight: 500;
 }
 
 QRadioButton::indicator {
@@ -330,11 +412,43 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:checked {
-    background-color: #3b82f6;
+    background-color: #38bdf8;
     border: 2px solid #ffffff;
 }
 
-/* 表格组件 */
+/* 视口顶部工具栏按钮 (BtnTool: 适应窗口, 1:1, 放大+, 缩小-) - 悬浮仅改背景色，文字边框完全恒定杜绝抖动 */
+QPushButton#BtnTool {
+    background-color: #141d2d;
+    color: #cbd5e1;
+    border: 1px solid #243044;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+QPushButton#BtnTool:hover {
+    background-color: #243044;
+    border: 1px solid #243044;
+    color: #cbd5e1;
+    padding: 3px 8px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+QPushButton#BtnTool:pressed {
+    background-color: #0b1120;
+    border: 1px solid #243044;
+    color: #cbd5e1;
+    padding: 3px 8px;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* 表格组件 (深青高亮选中行，与视口激光电光青保持严格对齐) */
 QTableWidget {
     background-color: #0b0f19;
     color: #f1f5f9;
@@ -342,12 +456,45 @@ QTableWidget {
     border: 1px solid #1e293b;
     border-radius: 6px;
     font-size: 11px;
-    selection-background-color: #1e3a8a;
+    selection-background-color: #083344;
     selection-color: #ffffff;
+}
+
+QTableWidget::item:selected {
+    background-color: #083344;
+    color: #ffffff;
 }
 
 QTableWidget::item:hover {
     background-color: #1a2538;
+}
+
+/* 数值微调输入框 SpinBox */
+QDoubleSpinBox, QSpinBox {
+    background-color: #0f172a;
+    color: #f1f5f9;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 11px;
+    font-weight: bold;
+}
+QDoubleSpinBox:hover, QSpinBox:hover {
+    border: 1px solid #38bdf8;
+}
+QDoubleSpinBox:focus, QSpinBox:focus {
+    border: 1px solid #00f2fe;
+    background-color: #141f36;
+}
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+QSpinBox::up-button, QSpinBox::down-button {
+    width: 14px;
+    background-color: #1e293b;
+    border: none;
+}
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover,
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: #334155;
 }
 
 QHeaderView::section {

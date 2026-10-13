@@ -51,7 +51,7 @@ from desktop_app.core.inspection_manager import InspectionSession
 from desktop_app.core.worker_thread import InspectionWorker
 from desktop_app.ui.panels.control_panel import ControlActionPanel
 from desktop_app.ui.panels.defect_table import DefectTablePanel
-from desktop_app.ui.panels.param_panel import ParamPanel
+from desktop_app.ui.panels.param_panel import HorizontalNumericStepper, ParamPanel
 from desktop_app.ui.panels.result_panel import ResultSummaryPanel
 from desktop_app.ui.panels.thumbnail_bar import BatchThumbnailBar
 from desktop_app.ui.viewports.image_canvas import ImageCanvasView
@@ -208,11 +208,13 @@ class MainWindow(QMainWindow):
         self.crop_temp_map: dict[str, str] = {}
         self.batch_files: list[str] = []
         self.batch_results: dict[str, dict] = {}
+        self.batch_review_overrides: dict[str, dict] = {}
         self.current_batch_index: int = -1
 
         self._setup_ui()
         self._load_stylesheet()
         self._connect_signals()
+
 
         # 4. 后台静默预热深度学习模型 (预热 GPU/CPU，消除首次点击的冷启动等待)
         from PySide6.QtCore import QTimer
@@ -288,19 +290,19 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(self.panel_result)
         right_layout.addWidget(self.panel_defect_table, stretch=1)
-        right_container.setMinimumWidth(370)
-        right_container.setMaximumWidth(480)
+        right_container.setMinimumWidth(380)
+        right_container.setMaximumWidth(500)
 
         # 将三部分装入 Splitter
         main_splitter.addWidget(left_scroll)
         main_splitter.addWidget(center_container)
         main_splitter.addWidget(right_container)
 
-        # 优化宽度配比：左翼展开容纳全部圆角矩形卡片 (左 380px, 右 380px)，中央视口居中舒展 (700px)
+        # 优化宽度配比：左翼展开容纳全部控制参数 (370px)，中央视口居中舒展 (690px)，右侧面板舒展容纳表格 (400px)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
         main_splitter.setStretchFactor(2, 0)
-        main_splitter.setSizes([380, 700, 380])
+        main_splitter.setSizes([370, 690, 400])
 
         root_layout.addWidget(main_splitter, stretch=1)
 
@@ -357,10 +359,15 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(12)
 
-        # 视图模式切换组 (纯文本分段胶囊)
+        # 视图模式独立分段控制胶囊容器 (高对比深色卡片底座，绝不与顶栏背景混淆)
+        self.view_mode_frame = QFrame()
+        self.view_mode_frame.setObjectName("ViewModeFrame")
+        view_layout = QHBoxLayout(self.view_mode_frame)
+        view_layout.setContentsMargins(8, 2, 8, 2)
+        view_layout.setSpacing(10)
+
         lbl_mode = QLabel("视图模式:")
-        lbl_mode.setStyleSheet("font-size: 11px; color: #94a3b8; font-weight: 600;")
-        layout.addWidget(lbl_mode)
+        view_layout.addWidget(lbl_mode)
 
         self.btn_view_outline = QRadioButton("全部细轮廓 (默认)")
         self.btn_view_outline.setChecked(True)
@@ -380,13 +387,15 @@ class MainWindow(QMainWindow):
         self.view_btn_group.addButton(self.btn_view_defect)
         self.view_btn_group.addButton(self.btn_view_raw)
 
-        layout.addWidget(self.btn_view_outline)
-        layout.addWidget(self.btn_view_defect)
-        layout.addWidget(self.btn_view_raw)
+        view_layout.addWidget(self.btn_view_outline)
+        view_layout.addWidget(self.btn_view_defect)
+        view_layout.addWidget(self.btn_view_raw)
 
-        # 标注透明度调节滑块
+        layout.addWidget(self.view_mode_frame)
+
+        # 标注透明度调节 (保留在顶栏原本位置，支持滑块、键盘手输具体数值与加减步进微调)
         lbl_alpha = QLabel("| 标注透明度:")
-        lbl_alpha.setStyleSheet("font-size: 11px; color: #64748b; margin-left: 6px;")
+        lbl_alpha.setStyleSheet("font-size: 11px; color: #94a3b8; margin-left: 6px;")
         layout.addWidget(lbl_alpha)
 
         self.slider_alpha = QSlider(Qt.Orientation.Horizontal)
@@ -394,28 +403,71 @@ class MainWindow(QMainWindow):
         self.slider_alpha.setValue(int(self.config.overlay_alpha * 100))
         self.slider_alpha.setFixedWidth(75)
         self.slider_alpha.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.slider_alpha.valueChanged.connect(self._on_alpha_changed)
+        self.slider_alpha.valueChanged.connect(self._on_alpha_slider_changed)
         layout.addWidget(self.slider_alpha)
 
-        self.lbl_alpha_val = QLabel(f"{int(self.config.overlay_alpha * 100)}%")
-        self.lbl_alpha_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #38bdf8; min-width: 34px;")
-        layout.addWidget(self.lbl_alpha_val)
+        self.spin_alpha = HorizontalNumericStepper(
+            min_val=10.0, max_val=100.0, step=5.0, decimals=0, color_hex="#38bdf8"
+        )
+        self.spin_alpha.setValue(self.config.overlay_alpha * 100.0)
+        self.spin_alpha.valueChanged.connect(self._on_alpha_spin_changed)
+        layout.addWidget(self.spin_alpha)
 
-        # 视口辅助控制
+        # 视口辅助控制分隔器
+        lbl_sep = QLabel("|")
+        lbl_sep.setStyleSheet("color: #475569; margin: 0 4px;")
+        layout.addWidget(lbl_sep)
+
+        # 视口辅助控制 (锁定文字字号/字重/边距，悬浮仅改背景色，彻底杜绝文字抖动跳跃)
+        btn_tool_qss = """
+            QPushButton {
+                background-color: #141d2d;
+                color: #cbd5e1;
+                border: 1px solid #243044;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+                font-size: 11px;
+                font-weight: 500;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #243044;
+                color: #cbd5e1;
+                border: 1px solid #243044;
+                padding: 3px 8px;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:pressed {
+                background-color: #0b1120;
+                color: #cbd5e1;
+                border: 1px solid #243044;
+                padding: 3px 8px;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+                font-size: 11px;
+                font-weight: 500;
+            }
+        """
+
         self.btn_fit = QPushButton("适应窗口")
         self.btn_fit.setObjectName("BtnTool")
+        self.btn_fit.setStyleSheet(btn_tool_qss)
         self.btn_fit.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_fit.clicked.connect(lambda: self.canvas.fit_in_view())
         layout.addWidget(self.btn_fit)
 
         self.btn_1to1 = QPushButton("1:1 原尺寸")
         self.btn_1to1.setObjectName("BtnTool")
+        self.btn_1to1.setStyleSheet(btn_tool_qss)
         self.btn_1to1.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_1to1.clicked.connect(lambda: self.canvas.zoom_1to1())
         layout.addWidget(self.btn_1to1)
 
         self.btn_zoom_in = QPushButton("放大 +")
         self.btn_zoom_in.setObjectName("BtnTool")
+        self.btn_zoom_in.setStyleSheet(btn_tool_qss)
         self.btn_zoom_in.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_zoom_in.setToolTip("放大视口 (快捷键: 鼠标滚轮向上滚动)")
         self.btn_zoom_in.clicked.connect(lambda: self.canvas.zoom_in())
@@ -423,16 +475,46 @@ class MainWindow(QMainWindow):
 
         self.btn_zoom_out = QPushButton("缩小 -")
         self.btn_zoom_out.setObjectName("BtnTool")
+        self.btn_zoom_out.setStyleSheet(btn_tool_qss)
         self.btn_zoom_out.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_zoom_out.setToolTip("缩小视口 (快捷键: 鼠标滚轮向下滚动)")
         self.btn_zoom_out.clicked.connect(lambda: self.canvas.zoom_out())
         layout.addWidget(self.btn_zoom_out)
 
+        # 视口辅助控制分隔器
+        lbl_sep2 = QLabel("|")
+        lbl_sep2.setStyleSheet("color: #475569; margin: 0 4px;")
+        layout.addWidget(lbl_sep2)
+
+        # 一键恢复所有被隐藏标注的快捷按钮
+        self.btn_restore_visible = QPushButton("恢复显示标注")
+        self.btn_restore_visible.setObjectName("BtnTool")
+        self.btn_restore_visible.setStyleSheet(btn_tool_qss)
+        self.btn_restore_visible.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_restore_visible.setToolTip(
+            "【一键恢复所有标注显示】\n"
+            "• 功能: 恢复所有因鼠标单击而被临时隐藏/消隐的焊点与桥连缺陷标注\n"
+            "• 快捷键: 键盘按 Esc 键亦可随时一键恢复全部显示\n"
+            "• 说明: 单击缺陷可单独隐藏以透视底图原貌，点击此按钮可全部复原"
+        )
+        self.btn_restore_visible.clicked.connect(self._handle_restore_annotations)
+        layout.addWidget(self.btn_restore_visible)
+
         layout.addStretch()
 
-        # 快捷键工程提示
-        lbl_hint = QLabel("[鼠标滚轮/按钮]: 缩放 | [左键/右键拖拽]: 平移画面 | [空格键]: 快速对比原图 | [单击焊球]: 切换标注显隐")
-        lbl_hint.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 500;")
+        # 视口快捷操作指南 (精炼提示 + 悬停完整手势浮窗，彻底消除右侧边界截断)
+        lbl_hint = QLabel("提示: 滚轮缩放 | 拖拽平移 | 空格对比原图 | Esc恢复隐藏标注")
+        lbl_hint.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 500; padding-right: 6px;")
+        lbl_hint.setCursor(Qt.CursorShape.PointingHandCursor)
+        lbl_hint.setToolTip(
+            "【视口核心快捷操作指南】\n"
+            "• 鼠标滚轮 / 顶栏按钮: 缩放画面 (支持 0.1x ~ 10.0x)\n"
+            "• 鼠标左键 / 右键按住拖拽: 自由平移画布\n"
+            "• 空格键 (按住/松开): 极速闪现对比 X 光纯净原图\n"
+            "• 鼠标单击任意焊球/桥连: 独立切换该标注隐藏/显示\n"
+            "• 顶栏【恢复显示标注】或按 Esc 键: 一键恢复所有被隐藏的标注\n"
+            "• 选中缺陷焊点按 R 键: 极速排除误检或恢复"
+        )
         layout.addWidget(lbl_hint)
 
         parent_layout.addWidget(toolbar_frame)
@@ -457,7 +539,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.lbl_status_msg, stretch=1)
 
         # 硬件状态常驻胶囊指示器
-        self.lbl_hw_badge = QLabel("● 硬件自适应中...")
+        self.lbl_hw_badge = QLabel("硬件自适应中...")
         self.lbl_hw_badge.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold; padding: 2px 8px; background-color: #161e31; border-radius: 4px; border: 1px solid #1e293b;")
         self.lbl_hw_badge.setToolTip("计算硬件状态 (系统全自动智能感知调度)")
         layout.addWidget(self.lbl_hw_badge)
@@ -548,17 +630,32 @@ class MainWindow(QMainWindow):
 
         # 参数面板动态重算与硬件联动
         self.panel_param.sig_threshold_changed.connect(self._handle_threshold_changed)
+        self.panel_param.sig_alpha_synced.connect(self._sync_alpha_from_config)
+        self.panel_param.sig_config_changed.connect(
+            lambda: self._handle_threshold_changed(self.config.ng_void_threshold, self.config.undersize_threshold)
+        )
         self.panel_param.sig_hardware_updated.connect(self._on_hardware_updated)
         self.panel_param._refresh_hardware_status()
 
-        # 表格联动聚焦
-        self.panel_defect_table.sig_ball_selected.connect(lambda idx: self.canvas.highlight_ball(idx, zoom_to=False))
-        self.panel_defect_table.sig_ball_focus_requested.connect(lambda idx: self.canvas.highlight_ball(idx, zoom_to=True))
+        # 表格联动聚焦 (单击立即平移居中定位并显示超醒目金黄十字准星，若-1则取消；双击深度特写放大)
+        self.panel_defect_table.sig_ball_selected.connect(
+            lambda idx: self.canvas.highlight_ball(idx, zoom_to=True, min_zoom=1.2)
+        )
+        self.panel_defect_table.sig_ball_focus_requested.connect(
+            lambda idx: self.canvas.highlight_ball(idx, zoom_to=True, min_zoom=1.8)
+        )
+
+        # 人工复核交互信号联动 (画布图元右键/快捷键R/表格操作按钮/表格右键)
+        self.canvas.sig_ball_review_toggled.connect(self._handle_ball_review_toggled)
+        self.canvas.sig_bridge_review_toggled.connect(self._handle_bridge_review_toggled)
+        self.panel_defect_table.sig_ball_review_toggled.connect(self._handle_ball_review_toggled)
+        self.canvas.sig_annotations_restored.connect(lambda n: self._handle_restore_annotations())
+
 
     def _on_hardware_updated(self, text: str, color: str):
         """同步硬件感知状态至底部状态栏常驻指示器"""
         if hasattr(self, "lbl_hw_badge"):
-            self.lbl_hw_badge.setText(f"● {text}")
+            self.lbl_hw_badge.setText(text)
             self.lbl_hw_badge.setStyleSheet(
                 f"color: {color}; font-size: 11px; font-weight: bold; padding: 2px 8px; "
                 f"background-color: #161e31; border-radius: 4px; border: 1px solid #1e293b;"
@@ -580,6 +677,7 @@ class MainWindow(QMainWindow):
 
         self.batch_files = [file_path]
         self.batch_results.clear()
+        self.batch_review_overrides.clear()
         self.crop_temp_map.clear()
         self.is_image_cropped = False
         self.current_batch_index = 0
@@ -615,6 +713,8 @@ class MainWindow(QMainWindow):
 
         self.batch_files = all_files
         self.batch_results.clear()
+        self.batch_review_overrides.clear()
+
         self.crop_temp_map.clear()
         self.is_image_cropped = False
         self.thumbnail_bar.show()
@@ -663,6 +763,15 @@ class MainWindow(QMainWindow):
             )
             self.session.elapsed_ms = matched_result.get("elapsed_ms", 0.0)
 
+            # 恢复当前工件历史人工复核记录 (按需抽查记录不丢失)
+            cached_rev = self.batch_review_overrides.get(target_path, {})
+            if cached_rev:
+                for b_idx, stat in cached_rev.get("balls", {}).items():
+                    self.session.manual_review_ball(b_idx, stat)
+                for br_idx in cached_rev.get("bridges", set()):
+                    self.session.manual_review_bridge(br_idx, True)
+                self.session.re_evaluate(self.config.ng_void_threshold, self.config.undersize_threshold)
+
             # 视口加载矢量标注
             self.canvas.load_inspection_overlay(
                 records=self.session.solder_records,
@@ -675,6 +784,7 @@ class MainWindow(QMainWindow):
             self.panel_defect_table.load_data(self.session.solder_records)
             # 保证该卡片状态与 session.board_status 保持严格一致
             self.thumbnail_bar.set_item_status(index, self.session.board_status)
+
         else:
             # 尚未检测完成（待检状态或质检进行中尚未出结果）
             self.session = InspectionSession()
@@ -686,7 +796,7 @@ class MainWindow(QMainWindow):
             self.lbl_status_msg.setText(f"已切换图像 [{index + 1}/{len(self.batch_files)}]: {os.path.basename(target_path)}")
 
     def keyPressEvent(self, event: QKeyEvent):
-        """全局键盘切图快捷键支持 (← 上一张, → 下一张)"""
+        """全局键盘切图快捷键支持 (← 上一张, → 下一张, Esc 恢复隐藏标注)"""
         if event.key() == Qt.Key.Key_Left:
             if len(self.batch_files) > 1 and self.current_batch_index > 0:
                 self.navigate_to_image(self.current_batch_index - 1)
@@ -697,7 +807,21 @@ class MainWindow(QMainWindow):
                 self.navigate_to_image(self.current_batch_index + 1)
                 event.accept()
                 return
+        elif event.key() == Qt.Key.Key_Escape:
+            self._handle_restore_annotations()
+            event.accept()
+            return
         super().keyPressEvent(event)
+
+    def _handle_restore_annotations(self):
+        """一键恢复所有被手动点击消隐的缺陷标注显示"""
+        restored = self.canvas.restore_all_annotations_visibility()
+        if hasattr(self, "session"):
+            self.session.reset_all_visibility()
+        if restored > 0:
+            self.lbl_status_msg.setText(f"已恢复 {restored} 处手动消隐的缺陷标注显示 (所有标注已就绪)")
+        else:
+            self.lbl_status_msg.setText("所有焊点与缺陷标注均已处于显示状态")
 
     def _handle_enter_crop(self):
         """进入 ROI 裁剪模式前安全检查"""
@@ -832,14 +956,88 @@ class MainWindow(QMainWindow):
     def _handle_batch_finished(self, results_list: list):
         self.panel_control.set_running_state(False)
         self.progress_bar.hide()
-        pass_count = sum(1 for c in self.thumbnail_bar.cards if c.status == "PASS")
+        pass_count = sum(1 for c in self.thumbnail_bar.cards if c.status.startswith("PASS"))
         ng_count = sum(1 for c in self.thumbnail_bar.cards if c.status == "NG")
         self.lbl_status_msg.setText(f"批量质检全部完成: 共 {len(self.thumbnail_bar.cards)} 张 | 合格 {pass_count} 张 | 缺陷 {ng_count} 张")
+
+    # ==============================================================
+    # ================= 🌟 [人工复核误检消除与闭环联动] =============
+    # ==============================================================
+    def _handle_ball_review_toggled(self, ball_index: int):
+        """处理焊点人工复核切换 (误检转合格 / 撤销恢复)"""
+        if not self.session.solder_records:
+            return
+
+        is_now_pass = self.session.toggle_ball_review(ball_index)
+        self.session.re_evaluate(self.config.ng_void_threshold, self.config.undersize_threshold)
+
+        # 缓存当前图像的复核记录，确保切图来回不丢失
+        cur_path = self.current_img_path
+        if cur_path not in self.batch_review_overrides:
+            self.batch_review_overrides[cur_path] = {"balls": {}, "bridges": set()}
+        if is_now_pass:
+            self.batch_review_overrides[cur_path]["balls"][ball_index] = "PASS"
+        else:
+            self.batch_review_overrides[cur_path]["balls"].pop(ball_index, None)
+
+        # 同步双向桥连缓存状态
+        for b_idx, b in enumerate(self.session.bridge_defects):
+            if b.get("is_reviewed_pass", False):
+                self.batch_review_overrides[cur_path]["bridges"].add(b_idx)
+            else:
+                self.batch_review_overrides[cur_path]["bridges"].discard(b_idx)
+
+        # 联动视口图元、判定看板与明细表格
+        self.canvas.refresh_solder_items()
+        stats = self.session.get_summary_stats()
+        self.panel_result.update_summary(stats)
+        self.panel_defect_table.refresh_table()
+
+        # 同步更新当前缩略图胶卷卡片徽标状态
+        if 0 <= self.current_batch_index < len(self.thumbnail_bar.cards):
+            card_status = self.session.board_status
+            self.thumbnail_bar.set_item_status(self.current_batch_index, card_status)
+
+        action_name = "已排除误检 (标记合格)" if is_now_pass else "已撤销复核 (恢复为AI判决)"
+        self.lbl_status_msg.setText(
+            f"焊球 #{ball_index} {action_name} | 当前有效不良: {stats['total_ng_balls']} 处 | 已排除误检: {stats['manual_cleared_count']} 处"
+        )
+
+    def _handle_bridge_review_toggled(self, bridge_index: int):
+        """处理桥连短路缺陷人工复核 (误检排除 / 撤销恢复)"""
+        if not self.session.bridge_defects or bridge_index >= len(self.session.bridge_defects):
+            return
+
+        b = self.session.bridge_defects[bridge_index]
+        curr = b.get("is_reviewed_pass", False)
+        new_state = not curr
+        self.session.manual_review_bridge(bridge_index, new_state)
+        self.session.re_evaluate(self.config.ng_void_threshold, self.config.undersize_threshold)
+
+        cur_path = self.current_img_path
+        if cur_path not in self.batch_review_overrides:
+            self.batch_review_overrides[cur_path] = {"balls": {}, "bridges": set()}
+        if new_state:
+            self.batch_review_overrides[cur_path]["bridges"].add(bridge_index)
+        else:
+            self.batch_review_overrides[cur_path]["bridges"].discard(bridge_index)
+
+        self.canvas.refresh_solder_items()
+        stats = self.session.get_summary_stats()
+        self.panel_result.update_summary(stats)
+        self.panel_defect_table.refresh_table()
+
+        if 0 <= self.current_batch_index < len(self.thumbnail_bar.cards):
+            self.thumbnail_bar.set_item_status(self.current_batch_index, self.session.board_status)
+
+        action_name = "已排除桥连误检 (标记非短路)" if new_state else "已撤销复核 (恢复桥连判定)"
+        self.lbl_status_msg.setText(f"桥连短路缺陷 #{bridge_index + 1} {action_name}")
 
     # ==============================================================
     # ================= 🌟 [动态阈值毫秒级重判] =====================
     # ==============================================================
     def _handle_threshold_changed(self, ng_void_thresh: float, undersize_thresh: float):
+
         if not self.session.solder_records:
             return
         # 1. 内存重算当前查看的图像会话
@@ -870,10 +1068,33 @@ class MainWindow(QMainWindow):
         self.config.view_mode = mode
         self.canvas.set_view_mode(mode)
 
-    def _on_alpha_changed(self, val: int):
-        self.lbl_alpha_val.setText(f"{val}%")
+    def _on_alpha_slider_changed(self, val: int):
+        self.spin_alpha.blockSignals(True)
+        self.spin_alpha.setValue(float(val))
+        self.spin_alpha.blockSignals(False)
+
         alpha = val / 100.0
         self.config.overlay_alpha = alpha
+        self.canvas.set_overlay_alpha(alpha)
+
+    def _on_alpha_spin_changed(self, val: float):
+        slider_val = int(round(val))
+        self.slider_alpha.blockSignals(True)
+        self.slider_alpha.setValue(slider_val)
+        self.slider_alpha.blockSignals(False)
+
+        alpha = slider_val / 100.0
+        self.config.overlay_alpha = alpha
+        self.canvas.set_overlay_alpha(alpha)
+
+    def _sync_alpha_from_config(self, alpha: float):
+        """当载入外部配方或重置默认配置时，自动同步更新顶栏透明度滑块与步进输入框"""
+        self.slider_alpha.blockSignals(True)
+        self.spin_alpha.blockSignals(True)
+        self.slider_alpha.setValue(int(alpha * 100))
+        self.spin_alpha.setValue(alpha * 100.0)
+        self.slider_alpha.blockSignals(False)
+        self.spin_alpha.blockSignals(False)
         self.canvas.set_overlay_alpha(alpha)
 
     # ==============================================================

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 工业级 PDF 质检单报表生成器 (PDF Reporter)
+BGA 工业级 PDF 质检单报表生成器 (PDF Reporter)
 -------------------------------------------------
 使用 reportlab 渲染规范的 A4 工业质检报告单：
 1. 包含工单标题、检测时间与整板 PASS / NG 鲜明大印章；
@@ -110,7 +110,7 @@ def export_inspection_pdf(
     info_data = [
         [
             Paragraph(f"<b>待测图片:</b> {image_name}", style_cell),
-            Paragraph(f"<b>检测模式:</b> 全项综合质检 (气泡+桥连+虚焊)", style_cell),
+            Paragraph(f"<b>检测模式:</b> 全项综合质检 (空洞+桥连+虚焊)", style_cell),
             Paragraph(f"<b>整板最终判定:</b>", style_cell_bold),
         ],
         [
@@ -139,7 +139,7 @@ def export_inspection_pdf(
     i_ng = summary_stats.get("insufficient_count", 0)
 
     stats_data = [
-        ["有效焊球总数", "气泡超标数", "桥连短路数", "虚焊少锡数", "最大气泡率", "最大面积缩减比"],
+        ["有效焊球总数", "空洞超标数", "桥连短路数", "虚焊少锡数", "最大空洞率", "最大面积缩减比"],
         [
             str(summary_stats.get("total_solders", 0)),
             f"{v_ng} 处" if v_ng > 0 else "0 (合格)",
@@ -179,14 +179,14 @@ def export_inspection_pdf(
     defect_records = [r for r in records if r.is_ng]
     
     if defect_records:
-        defect_data = [["序号", "中心坐标(X, Y)", "气泡空洞率", "面积偏离度", "桥连短路", "判废原因"]]
+        defect_data = [["序号", "中心坐标(X, Y)", "空洞率", "面积偏离度", "桥连短路", "判废原因"]]
         for r in defect_records[:25]:  # 最多展示前25项
             defect_data.append([
                 f"#{r.index}",
                 f"({r.cx:.1f}, {r.cy:.1f})",
                 f"{r.void_rate * 100:.1f}%",
                 f"-{r.reduction_percent:.1f}%" if r.reduction_percent > 0 else "0.0%",
-                "⚠️短路" if r.is_bridge else "正常",
+                "短路不良" if r.is_bridge else "正常",
                 ", ".join(r.ng_reasons) if r.ng_reasons else "异常",
             ])
         t_defect = Table(defect_data, colWidths=[1.8 * cm, 3.2 * cm, 2.5 * cm, 2.5 * cm, 2.2 * cm, 5.8 * cm])
@@ -203,7 +203,7 @@ def export_inspection_pdf(
         ]))
         story.append(t_defect)
     else:
-        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何气泡、桥连或虚焊缺陷，整板符合 IPC 标准。</b></font>", style_cell_bold))
+        story.append(Paragraph("<font color='#16a34a'><b>全板未检出任何空洞、桥连或虚焊缺陷，整板符合 IPC 标准。</b></font>", style_cell_bold))
 
     story.append(Spacer(1, 15))
 
