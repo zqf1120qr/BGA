@@ -108,11 +108,11 @@ class DefectTablePanel(QFrame):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._handle_context_menu)
 
-        # 强化选中行高亮与视口纯金黄十字准星保持严格一致
+        # 强化选中行高亮与视口准星保持严格一致，文字为高对比纯白
         self.table.setStyleSheet(f"""
             QTableWidget {{
                 selection-background-color: {DefectColors.FOCUS_TABLE_BG_HEX};
-                selection-color: {DefectColors.FOCUS_TARGET_HEX};
+                selection-color: #ffffff;
             }}
         """)
 

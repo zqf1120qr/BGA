@@ -21,16 +21,16 @@ class DefectColors:
     NORMAL_COLOR = QColor(16, 185, 129)
 
     # 2. 空洞缺陷 (Voiding)
-    # 超标空洞 (NG): 工业高辨识度亮橙色 (#ff7a00)，与桥连鲜红、虚焊紫色、焊球翠绿及准星金黄彻底区分
-    VOID_NG_HEX = "#ff7a00"
-    VOID_NG_COLOR = QColor(255, 122, 0)
-    # 未超标工艺微气泡 (PASS): 清澈电光青 / 冰川蓝 (#00f2fe)，与超标橙色形成极佳冷暖互补
+    # 超标空洞 (NG): 高饱和度纯正明黄色 (#ffd000)，在 X-Ray 底图上拥有极高辨识度，与桥连大红形成鲜明对比
+    VOID_NG_HEX = "#ffd000"
+    VOID_NG_COLOR = QColor(255, 208, 0)
+    # 未超标工艺微气泡 (PASS): 清澈电光青 / 冰川蓝 (#00f2fe)
     VOID_NORMAL_HEX = "#00f2fe"
     VOID_NORMAL_COLOR = QColor(0, 242, 254)
 
-    # 3. 桥连短路缺陷 (Bridging) - 警戒鲜红
-    BRIDGE_NG_HEX = "#ef4444"
-    BRIDGE_NG_COLOR = QColor(239, 68, 68)
+    # 3. 桥连短路缺陷 (Bridging) - 纯正警戒鲜红 (#dc2626)
+    BRIDGE_NG_HEX = "#dc2626"
+    BRIDGE_NG_COLOR = QColor(220, 38, 38)
 
     # 4. 虚焊少锡缺陷 (Insufficient Solder) - 高对比电光紫罗兰 (与空洞黄色彻底区分)
     INSUFF_NG_HEX = "#a855f7"
@@ -40,11 +40,12 @@ class DefectColors:
     CONF_HEX = "#10b981"
     CONF_COLOR = QColor(16, 185, 129)
 
-    # 6. 表格定位与聚焦准星 (Focus Target) - 超高亮激光纯金黄 (全图最醒目最高对比)
-    FOCUS_TARGET_HEX = "#ffe600"
-    FOCUS_TARGET_COLOR = QColor(255, 230, 0)
-    FOCUS_TABLE_BG_HEX = "#382900"  # 表格选中行金黄光感底色
-    FOCUS_TABLE_BG_COLOR = QColor(56, 41, 0)
+    # 6. 表格定位与聚焦准星 (Focus Target) - 高饱和激光亮红 (#ff1744)
+    # 针对白底/浅灰焊板基底提供超强穿透力与醒目视觉定位
+    FOCUS_TARGET_HEX = "#ff1744"
+    FOCUS_TARGET_COLOR = QColor(255, 23, 68)
+    FOCUS_TABLE_BG_HEX = "#881337"  # 表格选中行深邃绯红宝石底色，与亮红准星呼应
+    FOCUS_TABLE_BG_COLOR = QColor(136, 19, 55)
 
     # 7. 人工复核合格 / 排除误检 (Manual Reviewed PASS) - 电光青蓝 (#06b6d4)
     REVIEW_PASS_HEX = "#06b6d4"

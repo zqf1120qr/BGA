@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import datetime
 import os
 import sys
 import tempfile
@@ -55,8 +56,14 @@ from desktop_app.ui.panels.param_panel import HorizontalNumericStepper, ParamPan
 from desktop_app.ui.panels.result_panel import ResultSummaryPanel
 from desktop_app.ui.panels.thumbnail_bar import BatchThumbnailBar
 from desktop_app.ui.viewports.image_canvas import ImageCanvasView
-from desktop_app.utils.excel_reporter import export_inspection_excel
-from desktop_app.utils.pdf_reporter import export_inspection_pdf
+from desktop_app.utils.excel_reporter import (
+    export_inspection_excel,
+    export_batch_inspection_excel,
+)
+from desktop_app.utils.pdf_reporter import (
+    export_inspection_pdf,
+    export_batch_inspection_pdf,
+)
 from desktop_app.ui.splash_screen import get_app_icon_path
 
 
@@ -1100,50 +1107,250 @@ class MainWindow(QMainWindow):
     # ==============================================================
     # ================= 🌟 [双模报告导出] ===========================
     # ==============================================================
-    def export_pdf(self):
-        if not self.session.solder_records:
-            QMessageBox.information(self, "提示", "请先执行质检任务，产生结果后再导出报告")
-            return
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出 PDF 工业质检单",
-            f"BGA_Report_{os.path.splitext(os.path.basename(self.current_img_path))[0]}.pdf",
-            "PDF 文档 (*.pdf)"
-        )
-        if save_path:
-            try:
-                export_inspection_pdf(
-                    save_path=save_path,
-                    image_name=os.path.basename(self.current_img_path),
-                    summary_stats=self.session.get_summary_stats(),
-                    records=self.session.solder_records,
-                    preview_img_path=self.session.inspected_image_path,
+    def _collect_completed_batch_items(self) -> list[dict]:
+        """收集所有已完成质检的工件数据列表 (严格保持 batch_files 队列顺序)"""
+        items = []
+        for fp in self.batch_files:
+            # 1. 若当前视口正停留在该图且已有结果，优先直接取当前活跃 session (包含最新交互复核修改)
+            if (
+                self.session
+                and self.session.solder_records
+                and _same_file_path(fp, self.current_img_path)
+            ):
+                items.append({
+                    "image_name": os.path.basename(fp),
+                    "image_path": fp,
+                    "summary_stats": self.session.get_summary_stats(),
+                    "records": list(self.session.solder_records),
+                    "bridge_defects": list(self.session.bridge_defects),
+                    "preview_img_path": self.session.inspected_image_path or fp,
+                })
+                continue
+
+            # 2. 从 self.batch_results 查找该图历史检测结果
+            cached_res = None
+            for p, r in self.batch_results.items():
+                if _same_file_path(p, fp):
+                    cached_res = r
+                    break
+
+            if cached_res is not None:
+                tmp_sess = InspectionSession()
+                tmp_sess.load_from_pipeline_result(
+                    image_path=fp,
+                    raw_mat=None,
+                    result=cached_res,
+                    ng_void_thresh=self.config.ng_void_threshold,
+                    undersize_thresh=self.config.undersize_threshold,
                 )
-                QMessageBox.information(self, "导出成功", f"PDF 质检单已保存至:\n{save_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "导出失败", f"生成 PDF 报告失败: {e}")
+                tmp_sess.elapsed_ms = cached_res.get("elapsed_ms", 0.0)
+
+                # 恢复该工件的人工复核覆盖记录
+                cached_rev = self.batch_review_overrides.get(fp, {})
+                if cached_rev:
+                    for b_idx, stat in cached_rev.get("balls", {}).items():
+                        tmp_sess.manual_review_ball(b_idx, stat)
+                    for br_idx in cached_rev.get("bridges", set()):
+                        tmp_sess.manual_review_bridge(br_idx, True)
+                    tmp_sess.re_evaluate(self.config.ng_void_threshold, self.config.undersize_threshold)
+
+                preview_path = tmp_sess.inspected_image_path
+                if not preview_path or not os.path.exists(preview_path):
+                    preview_path = cached_res.get("visual_output_path")
+                if not preview_path or not os.path.exists(preview_path):
+                    preview_path = fp
+
+                items.append({
+                    "image_name": os.path.basename(fp),
+                    "image_path": fp,
+                    "summary_stats": tmp_sess.get_summary_stats(),
+                    "records": list(tmp_sess.solder_records),
+                    "bridge_defects": list(tmp_sess.bridge_defects),
+                    "preview_img_path": preview_path,
+                })
+
+        return items
+
+    def export_pdf(self):
+        completed_items = self._collect_completed_batch_items()
+        if not completed_items:
+            # 兜底：若 batch_files 尚未同步但当前 session 已有数据
+            if self.session and self.session.solder_records and self.current_img_path:
+                completed_items = [{
+                    "image_name": os.path.basename(self.current_img_path),
+                    "image_path": self.current_img_path,
+                    "summary_stats": self.session.get_summary_stats(),
+                    "records": list(self.session.solder_records),
+                    "preview_img_path": self.session.inspected_image_path or self.current_img_path,
+                }]
+            else:
+                QMessageBox.information(self, "提示", "请先执行质检任务，产生结果后再导出报告")
+                return
+
+        # 判定是否为批量导出场景
+        is_batch = len(self.batch_files) > 1 and len(completed_items) > 1
+        if is_batch:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("导出 PDF 质检单")
+            msg_box.setText(
+                f"当前批量检测队列共完成 {len(completed_items)} / {len(self.batch_files)} 张工件质检。\n\n"
+                "请选择导出方式："
+            )
+            btn_batch = msg_box.addButton(f"批量合并导出 ({len(completed_items)} 张合并为单份 PDF)", QMessageBox.ButtonRole.AcceptRole)
+            btn_single = msg_box.addButton("仅导出当前工件单图", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = msg_box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_batch)
+            msg_box.exec()
+
+            clicked = msg_box.clickedButton()
+            if clicked == btn_cancel:
+                return
+            export_as_batch = (clicked == btn_batch)
+        else:
+            export_as_batch = False
+
+        if export_as_batch:
+            now_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"BGA_Batch_Report_{now_tag}.pdf"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "批量合并导出 PDF 工业质检单",
+                default_name,
+                "PDF 文档 (*.pdf)"
+            )
+            if save_path:
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtCore import Qt
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                self.lbl_status_msg.setText(f"正在生成 {len(completed_items)} 张工件批量 PDF 报告...")
+                try:
+                    export_batch_inspection_pdf(save_path=save_path, batch_items=completed_items)
+                    QApplication.restoreOverrideCursor()
+                    self.lbl_status_msg.setText(f"批量 PDF 报告导出完成: {os.path.basename(save_path)}")
+                    QMessageBox.information(
+                        self,
+                        "导出成功",
+                        f"已成功将 {len(completed_items)} 张工件质检单合并导出至单份 PDF 文件:\n{save_path}"
+                    )
+                except Exception as e:
+                    QApplication.restoreOverrideCursor()
+                    QMessageBox.critical(self, "导出失败", f"批量生成 PDF 报告失败: {e}")
+        else:
+            # 单图导出
+            if not self.session.solder_records:
+                QMessageBox.information(self, "提示", "当前工件尚未产生质检结果，请先执行质检")
+                return
+            cur_name = os.path.splitext(os.path.basename(self.current_img_path))[0]
+            default_name = f"BGA_Report_{cur_name}.pdf"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出 PDF 工业质检单",
+                default_name,
+                "PDF 文档 (*.pdf)"
+            )
+            if save_path:
+                try:
+                    export_inspection_pdf(
+                        save_path=save_path,
+                        image_name=os.path.basename(self.current_img_path),
+                        summary_stats=self.session.get_summary_stats(),
+                        records=self.session.solder_records,
+                        preview_img_path=self.session.inspected_image_path,
+                        image_path=self.current_img_path,
+                        bridge_defects=self.session.bridge_defects,
+                    )
+                    QMessageBox.information(self, "导出成功", f"PDF 质检单已保存至:\n{save_path}")
+                except Exception as e:
+                    QMessageBox.critical(self, "导出失败", f"生成 PDF 报告失败: {e}")
 
     def export_excel(self):
-        if not self.session.solder_records:
-            QMessageBox.information(self, "提示", "请先执行质检任务，产生结果后再导出表格")
-            return
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出 Excel 原始数据明细表",
-            f"BGA_Details_{os.path.splitext(os.path.basename(self.current_img_path))[0]}.xlsx",
-            "Excel 工作簿 (*.xlsx)"
-        )
-        if save_path:
-            try:
-                export_inspection_excel(
-                    save_path=save_path,
-                    image_name=os.path.basename(self.current_img_path),
-                    summary_stats=self.session.get_summary_stats(),
-                    records=self.session.solder_records,
-                )
-                QMessageBox.information(self, "导出成功", f"Excel 数据表已保存至:\n{save_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "导出失败", f"生成 Excel 表格失败: {e}")
+        completed_items = self._collect_completed_batch_items()
+        if not completed_items:
+            # 兜底：若 batch_files 尚未同步但当前 session 已有数据
+            if self.session and self.session.solder_records and self.current_img_path:
+                completed_items = [{
+                    "image_name": os.path.basename(self.current_img_path),
+                    "image_path": self.current_img_path,
+                    "summary_stats": self.session.get_summary_stats(),
+                    "records": list(self.session.solder_records),
+                    "preview_img_path": self.session.inspected_image_path or self.current_img_path,
+                }]
+            else:
+                QMessageBox.information(self, "提示", "请先执行质检任务，产生结果后再导出表格")
+                return
+
+        # 判定是否为批量导出场景
+        is_batch = len(self.batch_files) > 1 and len(completed_items) > 1
+        if is_batch:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("导出 Excel 报表")
+            msg_box.setText(
+                f"当前批量检测队列共完成 {len(completed_items)} / {len(self.batch_files)} 张工件质检。\n\n"
+                "请选择导出方式："
+            )
+            btn_batch = msg_box.addButton(f"批量合并导出 ({len(completed_items)} 张多 Sheet 合并为单一 Excel)", QMessageBox.ButtonRole.AcceptRole)
+            btn_single = msg_box.addButton("仅导出当前工件单表", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = msg_box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_batch)
+            msg_box.exec()
+
+            clicked = msg_box.clickedButton()
+            if clicked == btn_cancel:
+                return
+            export_as_batch = (clicked == btn_batch)
+        else:
+            export_as_batch = False
+
+        if export_as_batch:
+            now_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"BGA_Batch_Details_{now_tag}.xlsx"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "批量合并导出 Excel 原始数据明细表",
+                default_name,
+                "Excel 工作簿 (*.xlsx)"
+            )
+            if save_path:
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtCore import Qt
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                self.lbl_status_msg.setText(f"正在生成 {len(completed_items)} 张工件批量 Excel 报表...")
+                try:
+                    export_batch_inspection_excel(save_path=save_path, batch_items=completed_items)
+                    QApplication.restoreOverrideCursor()
+                    self.lbl_status_msg.setText(f"批量 Excel 报表导出完成: {os.path.basename(save_path)}")
+                    QMessageBox.information(
+                        self,
+                        "导出成功",
+                        f"已成功将 {len(completed_items)} 张工件质检数据合并导出至单一 Excel 文件 (多 Sheet 结构):\n{save_path}"
+                    )
+                except Exception as e:
+                    QApplication.restoreOverrideCursor()
+                    QMessageBox.critical(self, "导出失败", f"批量生成 Excel 表格失败: {e}")
+        else:
+            # 单图导出
+            if not self.session.solder_records:
+                QMessageBox.information(self, "提示", "当前工件尚未产生质检结果，请先执行质检")
+                return
+            cur_name = os.path.splitext(os.path.basename(self.current_img_path))[0]
+            default_name = f"BGA_Details_{cur_name}.xlsx"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出 Excel 原始数据明细表",
+                default_name,
+                "Excel 工作簿 (*.xlsx)"
+            )
+            if save_path:
+                try:
+                    export_inspection_excel(
+                        save_path=save_path,
+                        image_name=os.path.basename(self.current_img_path),
+                        summary_stats=self.session.get_summary_stats(),
+                        records=self.session.solder_records,
+                    )
+                    QMessageBox.information(self, "导出成功", f"Excel 数据表已保存至:\n{save_path}")
+                except Exception as e:
+                    QMessageBox.critical(self, "导出失败", f"生成 Excel 表格失败: {e}")
 
     def _start_background_model_preload(self):
         """后台守护线程静默预加载检测器模型，消除首张图片的冷启动等待，且不阻塞 UI 交互"""

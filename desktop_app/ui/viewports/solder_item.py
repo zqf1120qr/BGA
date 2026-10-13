@@ -125,37 +125,41 @@ class SolderBallGraphicsItem(QGraphicsItem):
             pen_width = 1.0 if not self.is_hovered else 2.0
 
 
-        # 双击/单击表格定位选中：超高亮纯金黄 (#ffe600) 双层准星雷达复合靶心
+        # 双击/单击表格定位选中：高饱和激光亮红 (#ff1744) 双层准星雷达复合靶心
         if self.is_selected:
             focus_col = DefectColors.FOCUS_TARGET_COLOR
             cx, cy, r = self.record.cx, self.record.cy, self.record.radius
 
-            # 0. 底层黑色微轮廓 (保证在极亮/极白背景下依然拥有顶级反差)
+            # 0. 底层黑色微轮廓 (保证在极亮/偏白焊板背景下依然拥有顶级反差)
             shadow_pen = QPen(QColor(0, 0, 0, 200), 4.5, Qt.PenStyle.SolidLine)
             painter.setPen(shadow_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(QPointF(cx, cy), r + 3.0, r + 3.0)
 
-            # 1. 内环：高亮激光纯金黄实线主光环 (粗线 3.0px)
+            # 1. 内环：激光亮红实线主光环 (粗线 3.0px)
             inner_pen = QPen(focus_col, 3.0, Qt.PenStyle.SolidLine)
             painter.setPen(inner_pen)
             painter.drawEllipse(QPointF(cx, cy), r + 3.0, r + 3.0)
 
-            # 2. 外环：高亮金色雷达大虚线圈 (扩展 10px)
+            # 2. 外环：雷达大虚线圈 (扩展 10px)，加黑底虚线阴影彻底消除白底失真
+            outer_shadow = QPen(QColor(0, 0, 0, 180), 3.6, Qt.PenStyle.DashLine)
+            painter.setPen(outer_shadow)
+            painter.drawEllipse(QPointF(cx, cy), r + 10.0, r + 10.0)
+
             outer_pen = QPen(focus_col, 2.0, Qt.PenStyle.DashLine)
             painter.setPen(outer_pen)
             painter.drawEllipse(QPointF(cx, cy), r + 10.0, r + 10.0)
 
             # 3. 极醒目的 4 向十字瞄准准星标尺线 (Crosshair Reticle)
             # 先画黑底阴影
-            reticle_shadow = QPen(QColor(0, 0, 0, 220), 4.0, Qt.PenStyle.SolidLine)
+            reticle_shadow = QPen(QColor(0, 0, 0, 220), 4.2, Qt.PenStyle.SolidLine)
             painter.setPen(reticle_shadow)
             painter.drawLine(QPointF(cx, cy - r - 10.0), QPointF(cx, cy - r - 19.0))
             painter.drawLine(QPointF(cx, cy + r + 10.0), QPointF(cx, cy + r + 19.0))
             painter.drawLine(QPointF(cx - r - 10.0, cy), QPointF(cx - r - 19.0, cy))
             painter.drawLine(QPointF(cx + r + 10.0, cy), QPointF(cx + r + 19.0, cy))
 
-            # 再画金色主体准星线
+            # 再画激光亮红主体准星线
             reticle_pen = QPen(focus_col, 2.6, Qt.PenStyle.SolidLine)
             painter.setPen(reticle_pen)
             painter.drawLine(QPointF(cx, cy - r - 10.0), QPointF(cx, cy - r - 19.0))
