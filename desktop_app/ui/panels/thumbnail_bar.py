@@ -385,9 +385,8 @@ class BatchThumbnailBar(QFrame):
         self.lbl_badge_ng.setText(f"缺陷: {ng_count}")
 
     def _handle_card_clicked(self, index: int):
-        if index != self.current_index:
-            self.set_current_index(index, scroll_to=False)
-            self.sig_image_selected.emit(index)
+        self.set_current_index(index, scroll_to=False)
+        self.sig_image_selected.emit(index)
 
     def _on_prev_clicked(self):
         if self.current_index > 0:

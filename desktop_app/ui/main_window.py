@@ -217,6 +217,8 @@ class MainWindow(QMainWindow):
         self.batch_results: dict[str, dict] = {}
         self.batch_review_overrides: dict[str, dict] = {}
         self.current_batch_index: int = -1
+        self.is_auto_follow_inspection: bool = True
+        self.current_inspecting_index: int = -1
 
         self._setup_ui()
         self._load_stylesheet()
@@ -621,7 +623,7 @@ class MainWindow(QMainWindow):
         self.canvas.sig_crop_cancelled.connect(lambda: self.panel_control.show_crop_actions(False))
 
         # 批量图像胶卷选择联动
-        self.thumbnail_bar.sig_image_selected.connect(self.navigate_to_image)
+        self.thumbnail_bar.sig_image_selected.connect(self._handle_user_selected_image)
 
         # 控制面板交互
         self.panel_control.sig_open_image.connect(self.load_image)
@@ -800,17 +802,33 @@ class MainWindow(QMainWindow):
 
         self.thumbnail_bar.set_current_index(index, scroll_to=True)
         if not during_inspection:
-            self.lbl_status_msg.setText(f"已切换图像 [{index + 1}/{len(self.batch_files)}]: {os.path.basename(target_path)}")
+            if self.worker and self.worker.isRunning():
+                self.lbl_status_msg.setText(
+                    f"已锁定浏览 [{index + 1}/{len(self.batch_files)}]: {os.path.basename(target_path)} (后台批量质检运行中)"
+                )
+            else:
+                self.lbl_status_msg.setText(f"已切换图像 [{index + 1}/{len(self.batch_files)}]: {os.path.basename(target_path)}")
+
+    def _handle_user_selected_image(self, index: int):
+        """处理用户在胶卷栏中手动点击卡片切图 (用户主动切图即锁定视口，不再自动跳转)"""
+        if self.worker and self.worker.isRunning():
+            # 若用户主动点击的是当前正处于 inspecting 状态的卡片，恢复跟随；否则锁定在用户所选工件上，绝不自动切走
+            self.is_auto_follow_inspection = (index == self.current_inspecting_index)
+        self.navigate_to_image(index, during_inspection=False)
 
     def keyPressEvent(self, event: QKeyEvent):
         """全局键盘切图快捷键支持 (← 上一张, → 下一张, Esc 恢复隐藏标注)"""
         if event.key() == Qt.Key.Key_Left:
             if len(self.batch_files) > 1 and self.current_batch_index > 0:
+                if self.worker and self.worker.isRunning():
+                    self.is_auto_follow_inspection = False
                 self.navigate_to_image(self.current_batch_index - 1)
                 event.accept()
                 return
         elif event.key() == Qt.Key.Key_Right:
             if len(self.batch_files) > 1 and self.current_batch_index < len(self.batch_files) - 1:
+                if self.worker and self.worker.isRunning():
+                    self.is_auto_follow_inspection = False
                 self.navigate_to_image(self.current_batch_index + 1)
                 event.accept()
                 return
@@ -889,6 +907,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.show()
         self.progress_bar.setRange(0, len(queue))
         self.progress_bar.setValue(0)
+        self.is_auto_follow_inspection = True
+        self.current_inspecting_index = 0
 
         # 启动工作线程
         self.worker = InspectionWorker(queue, self.config, self)
@@ -903,16 +923,26 @@ class MainWindow(QMainWindow):
     def stop_inspection(self):
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
+            self.is_auto_follow_inspection = False
 
     def _handle_worker_started(self, img_path: str):
         orig_path = self.crop_temp_map.get(img_path, img_path)
         for idx, fp in enumerate(self.batch_files):
             if _same_file_path(fp, orig_path):
+                self.current_inspecting_index = idx
                 self.thumbnail_bar.set_item_status(idx, "inspecting")
-                # 实时跟随：质检开始时，中间画布自动切换至正在质检的图像
-                self.navigate_to_image(idx, during_inspection=True)
+                # 只有在保持“实时跟随”模式下，才自动将主视口切换至当前正在质检的图像
+                if self.is_auto_follow_inspection:
+                    self.navigate_to_image(idx, during_inspection=True)
                 break
-        self.lbl_status_msg.setText(f"正在质检: {os.path.basename(orig_path)}...")
+
+        if self.is_auto_follow_inspection:
+            self.lbl_status_msg.setText(f"正在质检: {os.path.basename(orig_path)}...")
+        else:
+            cur_name = os.path.basename(self.current_img_path) if self.current_img_path else ""
+            self.lbl_status_msg.setText(
+                f"后台正在质检: {os.path.basename(orig_path)} | 视口已锁定查看: {cur_name}"
+            )
 
     def _handle_worker_progress(self, current: int, total: int, filename: str):
         self.progress_bar.setValue(current)
@@ -963,6 +993,8 @@ class MainWindow(QMainWindow):
     def _handle_batch_finished(self, results_list: list):
         self.panel_control.set_running_state(False)
         self.progress_bar.hide()
+        self.is_auto_follow_inspection = False
+        self.current_inspecting_index = -1
         pass_count = sum(1 for c in self.thumbnail_bar.cards if c.status.startswith("PASS"))
         ng_count = sum(1 for c in self.thumbnail_bar.cards if c.status == "NG")
         self.lbl_status_msg.setText(f"批量质检全部完成: 共 {len(self.thumbnail_bar.cards)} 张 | 合格 {pass_count} 张 | 缺陷 {ng_count} 张")
