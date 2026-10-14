@@ -159,7 +159,7 @@ def inspect_bga_void(
     conf_threshold: Optional[float] = None,
     ng_void_threshold: float = 0.25,     # 气泡超标门槛 (默认 25%)
     device: str = "0",
-    save_debug_image: bool = True,
+    save_debug_image: bool = False,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
@@ -264,7 +264,7 @@ def inspect_bga_bridge(
     weights_path: str,
     conf_threshold: Optional[float] = None,
     device: str = "0",
-    save_debug_image: bool = True,
+    save_debug_image: bool = False,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
@@ -386,7 +386,7 @@ def inspect_bga_insufficient(
     undersize_threshold: float = 0.20,     # 面积比基准小 20% 以上判为虚焊 (默认 20%)
     reference_mode: str = "mean",          # 基准模式: "mean" (算术均值) 或 "median" (稳健中位数)
     device: str = "0",
-    save_debug_image: bool = True,
+    save_debug_image: bool = False,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
@@ -495,7 +495,7 @@ def inspect_bga_comprehensive(
     undersize_threshold: float = 0.20,   # 虚焊面积缩减门槛 (默认 20%)
     area_reference_mode: str = "mean",    # 虚焊基准模式: "mean" 或 "median"
     device: str = "0",
-    save_debug_image: bool = True,
+    save_debug_image: bool = False,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """
@@ -667,7 +667,7 @@ def inspect_bga(
     undersize_threshold: float = 0.20,
     area_reference_mode: str = "mean",
     device: str = "0",
-    save_debug_image: bool = True,
+    save_debug_image: bool = False,
     debug_output_dir: Optional[str] = None,
 ) -> BoardInspectionResult:
     """

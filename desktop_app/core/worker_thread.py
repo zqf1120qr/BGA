@@ -87,7 +87,7 @@ class InspectionWorker(QThread):
                     undersize_threshold=self.config.undersize_threshold,
                     area_reference_mode=self.config.area_reference_mode,
                     device=target_device,
-                    save_debug_image=True,
+                    save_debug_image=False,
                 )
                 elapsed_ms = (time.time() - t_start) * 1000.0
                 result["elapsed_ms"] = round(elapsed_ms, 1)

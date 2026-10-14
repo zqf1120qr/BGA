@@ -125,6 +125,14 @@ def deploy_external_assets():
             except Exception:
                 pass
 
+    # 5. 清理发行包中的历史残留 output 调试输出目录
+    output_dist = os.path.join(DIST_DIR, "output")
+    if os.path.exists(output_dist):
+        try:
+            shutil.rmtree(output_dist, ignore_errors=True)
+        except Exception:
+            pass
+
     log("资产组织与规整部署完成！")
 
 
