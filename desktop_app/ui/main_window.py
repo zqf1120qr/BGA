@@ -720,6 +720,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "所选目录中未找到支持的图像文件")
             return
 
+        self.current_folder_name = os.path.basename(os.path.abspath(folder_path))
         self.batch_files = all_files
         self.batch_results.clear()
         self.batch_review_overrides.clear()
@@ -1177,8 +1178,13 @@ class MainWindow(QMainWindow):
                 )
                 tmp_sess.elapsed_ms = cached_res.get("elapsed_ms", 0.0)
 
-                # 恢复该工件的人工复核覆盖记录
-                cached_rev = self.batch_review_overrides.get(fp, {})
+                # 恢复该工件的人工复核覆盖记录 (支持路径大小写与正反斜杠鲁棒匹配)
+                cached_rev = {}
+                for rev_p, rev_v in self.batch_review_overrides.items():
+                    if _same_file_path(rev_p, fp):
+                        cached_rev = rev_v
+                        break
+
                 if cached_rev:
                     for b_idx, stat in cached_rev.get("balls", {}).items():
                         tmp_sess.manual_review_ball(b_idx, stat)
@@ -1213,6 +1219,7 @@ class MainWindow(QMainWindow):
                     "image_path": self.current_img_path,
                     "summary_stats": self.session.get_summary_stats(),
                     "records": list(self.session.solder_records),
+                    "bridge_defects": list(self.session.bridge_defects),
                     "preview_img_path": self.session.inspected_image_path or self.current_img_path,
                 }]
             else:
@@ -1256,7 +1263,26 @@ class MainWindow(QMainWindow):
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
                 self.lbl_status_msg.setText(f"正在生成 {len(completed_items)} 张工件批量 PDF 报告...")
                 try:
-                    export_batch_inspection_pdf(save_path=save_path, batch_items=completed_items)
+                    folder_name = getattr(self, "current_folder_name", "")
+                    if not folder_name and self.batch_files:
+                        folder_name = os.path.basename(os.path.dirname(os.path.abspath(self.batch_files[0])))
+                    if not folder_name:
+                        folder_name = "BGA 批量工件"
+
+                    # 注入当前判废门限参数
+                    cur_params = self.param_panel.get_params() if hasattr(self, "param_panel") and self.param_panel else {}
+                    v_th = cur_params.get("void_area_thresh", getattr(self.session, "void_thresh", 0.15))
+                    r_th = cur_params.get("reduction_thresh", getattr(self.session, "reduction_thresh", 0.20))
+                    for it in completed_items:
+                        if "summary_stats" in it:
+                            it["summary_stats"]["void_threshold"] = v_th
+                            it["summary_stats"]["reduction_threshold"] = r_th
+
+                    export_batch_inspection_pdf(
+                        save_path=save_path,
+                        batch_items=completed_items,
+                        batch_product_name=folder_name,
+                    )
                     QApplication.restoreOverrideCursor()
                     self.lbl_status_msg.setText(f"批量 PDF 报告导出完成: {os.path.basename(save_path)}")
                     QMessageBox.information(
@@ -1282,10 +1308,15 @@ class MainWindow(QMainWindow):
             )
             if save_path:
                 try:
+                    stats = self.session.get_summary_stats()
+                    cur_params = self.param_panel.get_params() if hasattr(self, "param_panel") and self.param_panel else {}
+                    stats["void_threshold"] = cur_params.get("void_area_thresh", getattr(self.session, "void_thresh", 0.15))
+                    stats["reduction_threshold"] = cur_params.get("reduction_thresh", getattr(self.session, "reduction_thresh", 0.20))
+
                     export_inspection_pdf(
                         save_path=save_path,
                         image_name=os.path.basename(self.current_img_path),
-                        summary_stats=self.session.get_summary_stats(),
+                        summary_stats=stats,
                         records=self.session.solder_records,
                         preview_img_path=self.session.inspected_image_path,
                         image_path=self.current_img_path,

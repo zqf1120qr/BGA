@@ -238,46 +238,60 @@ def render_defect_only_preview(
     occupied_badge_rects: List[QRectF] = []
 
     # --------------------------------------------------------------
-    # 步骤 A: 预处理桥连短路缺陷，记录涉及的焊点索引
+    # 步骤 A: 预处理桥连短路缺陷，区分活跃短路与已排除误检短路
     # --------------------------------------------------------------
-    bridge_partner_ball_indices = set()
-    valid_bridge_defects = []
+    active_bridge_defects = []
+    reviewed_bridge_defects = []
+    active_bridge_ball_indices = set()
+    reviewed_bridge_ball_indices = set()
 
     for b in bridge_defects:
         if b.get("is_reviewed_pass", False):
-            continue
-        valid_bridge_defects.append(b)
-        has_defects = True
-        for s_idx in b.get("ball_indices", []):
-            bridge_partner_ball_indices.add(s_idx)
+            reviewed_bridge_defects.append(b)
+            has_defects = True
+            for s_idx in b.get("ball_indices", []):
+                reviewed_bridge_ball_indices.add(s_idx)
+        else:
+            active_bridge_defects.append(b)
+            has_defects = True
+            for s_idx in b.get("ball_indices", []):
+                active_bridge_ball_indices.add(s_idx)
 
     # --------------------------------------------------------------
-    # 步骤 B: 绘制所有缺陷焊球的轮廓与气泡 (正常合格焊球完全不绘制)
+    # 步骤 B: 绘制所有缺陷与复核焊球轮廓 (正常合格焊球 100% 保持底图零遮挡)
     # --------------------------------------------------------------
     defect_records_to_label = []
 
     for rec in records:
-        is_rev_pass = (rec.is_manually_reviewed and rec.manual_status == "PASS")
-        if not rec.final_is_ng and not is_rev_pass:
+        is_ball_rev_pass = (rec.is_manually_reviewed and rec.manual_status == "PASS")
+        is_bridge_cleared = (getattr(rec, "is_bridge_cleared", False) and not rec.final_is_ng)
+        is_cleared = is_ball_rev_pass or is_bridge_cleared
+        is_ng = rec.final_is_ng
+
+        if not is_ng and not is_cleared:
             continue  # 正常焊球 100% 保持底图原貌！
 
         has_defects = True
         cx, cy, r = rec.cx, rec.cy, rec.radius
 
         # 确定主轮廓颜色 (优先级：桥连大红 > 空洞纯黄 > 虚焊紫 > 复核青)
-        if is_rev_pass:
-            pen_c = col_review
-        elif rec.is_bridge or rec.index in bridge_partner_ball_indices:
-            pen_c = col_bridge
-        elif rec.is_void_ng:
-            pen_c = col_void
-        elif rec.is_insufficient:
-            pen_c = col_insuff
+        if is_ng:
+            if getattr(rec, "has_active_bridge", False) or rec.index in active_bridge_ball_indices:
+                pen_c = col_bridge
+            elif rec.is_void_ng:
+                pen_c = col_void
+            elif rec.is_insufficient:
+                pen_c = col_insuff
+            else:
+                pen_c = col_void
         else:
-            pen_c = col_void
+            pen_c = col_review
 
-        # 绘制焊球外圈
-        painter.setPen(QPen(pen_c, pen_thick))
+        # 绘制焊球外圈: 复核排除合格的使用虚线圈，缺陷使用实线圈
+        if is_cleared:
+            painter.setPen(QPen(pen_c, pen_thick, Qt.PenStyle.DashLine))
+        else:
+            painter.setPen(QPen(pen_c, pen_thick))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(QPointF(cx, cy), r, r)
 
@@ -291,21 +305,21 @@ def render_defect_only_preview(
 
         # 判断该焊球是否需要贴标牌：
         # 核心逻辑：若该球【仅作为桥连对】受波及，且自身没有任何其他缺陷 (无超标空洞、无少锡)，
-        # 则不需要贴单独标牌！因为桥连短路框上已经统一标明了球对！这样直接消除一个短路冒出 3 个标题的问题！
+        # 则不需要贴单独标牌！因为桥连短路框上已经统一标明了球对或已排除！这样直接消除一个短路冒出 3 个标题的问题！
         is_pure_bridge_ball = (
-            (rec.is_bridge or rec.index in bridge_partner_ball_indices)
+            (rec.is_bridge or rec.index in active_bridge_ball_indices or rec.index in reviewed_bridge_ball_indices)
             and not rec.is_void_ng
             and not rec.is_insufficient
-            and not is_rev_pass
         )
 
         if not is_pure_bridge_ball:
             defect_records_to_label.append(rec)
 
     # --------------------------------------------------------------
-    # 步骤 C: 绘制桥连短路 ROI 框及紧贴放置的短路标牌 (仅标一次)
+    # 步骤 C: 绘制桥连短路 ROI 框及紧贴放置的标牌 (包含活跃短路与已排除短路)
     # --------------------------------------------------------------
-    for b in valid_bridge_defects:
+    # C1. 活跃桥连短路 (纯正警戒鲜红)
+    for b in active_bridge_defects:
         roi_box = b.get("roi_box", (0, 0, 0, 0))
         rx, ry, rw, rh = roi_box
         if rw <= 0 or rh <= 0:
@@ -329,7 +343,6 @@ def render_defect_only_preview(
         tw = fm.horizontalAdvance(b_text) + 8 * scale
         th = fm.height() + 3 * scale
 
-        # 紧凑贴边放置标牌 (紧贴右侧或左侧框边缘 4px，绝不推远)
         badge_rect = _find_best_badge_rect_for_box(
             rx=rx,
             ry=ry,
@@ -343,7 +356,6 @@ def render_defect_only_preview(
             gap=4.0 * scale,
         )
 
-        # 绘制微型紧凑半透明深色标牌 (带警戒大红边框)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(15, 23, 42, 190)))
         painter.drawRoundedRect(badge_rect, 3 * scale, 3 * scale)
@@ -353,28 +365,78 @@ def render_defect_only_preview(
         painter.setPen(QPen(col_bridge, 1.0))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, b_text)
 
+    # C2. 已人工复核排除的桥连缺陷 (高对比电光青虚线框 + [已排除] 标牌)
+    for b in reviewed_bridge_defects:
+        roi_box = b.get("roi_box", (0, 0, 0, 0))
+        rx, ry, rw, rh = roi_box
+        if rw <= 0 or rh <= 0:
+            continue
+
+        # 绘制电光青色虚线矩形框
+        painter.setPen(QPen(col_review, pen_thick, Qt.PenStyle.DashLine))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(QRectF(rx, ry, rw, rh))
+
+        pair_indices = b.get("ball_indices", [])
+        if len(pair_indices) >= 2:
+            p_sorted = sorted(pair_indices[:2])
+            b_text = f"#{p_sorted[0]}↔#{p_sorted[1]} [已排除]"
+        elif len(pair_indices) == 1:
+            b_text = f"#{pair_indices[0]} [已排除]"
+        else:
+            b_text = "[已排除]"
+
+        tw = fm.horizontalAdvance(b_text) + 8 * scale
+        th = fm.height() + 3 * scale
+
+        badge_rect = _find_best_badge_rect_for_box(
+            rx=rx,
+            ry=ry,
+            rw=rw,
+            rh=rh,
+            badge_w=tw,
+            badge_h=th,
+            img_w=w,
+            img_h=h,
+            occupied_rects=occupied_badge_rects,
+            gap=4.0 * scale,
+        )
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(15, 23, 42, 190)))
+        painter.drawRoundedRect(badge_rect, 3 * scale, 3 * scale)
+
+        painter.setPen(QPen(col_review, 1.2))
+        painter.drawRoundedRect(badge_rect, 3 * scale, 3 * scale)
+        painter.setPen(QPen(col_review, 1.0))
+        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, b_text)
+
     # --------------------------------------------------------------
     # 步骤 D: 绘制有自身缺陷焊球的标牌 (复合缺陷智能合并 + 紧贴避让)
     # --------------------------------------------------------------
     for rec in defect_records_to_label:
-        is_rev_pass = (rec.is_manually_reviewed and rec.manual_status == "PASS")
+        is_ball_rev_pass = (rec.is_manually_reviewed and rec.manual_status == "PASS")
+        is_bridge_cleared = (getattr(rec, "is_bridge_cleared", False) and not rec.final_is_ng)
         cx, cy, r = rec.cx, rec.cy, rec.radius
 
         # 1. 复合缺陷合并逻辑：一个焊球最多只产生一个紧凑文本
         def_parts = []
-        if is_rev_pass:
+        if is_ball_rev_pass:
             def_parts.append("复核PASS")
+            badge_col = col_review
+        elif is_bridge_cleared:
+            def_parts.append("桥连排除PASS")
             badge_col = col_review
         else:
             if rec.is_void_ng:
                 def_parts.append(f"空洞{rec.void_rate * 100:.1f}%")
             if rec.is_insufficient:
                 def_parts.append(f"少锡-{rec.reduction_percent:.1f}%")
-            if (rec.is_bridge or rec.index in bridge_partner_ball_indices):
+            if getattr(rec, "has_active_bridge", False) or (rec.is_bridge and not getattr(rec, "is_bridge_cleared", False)):
                 def_parts.append("桥连")
 
             # 标牌颜色 (优先：桥连大红 > 空洞纯黄 > 虚焊紫)
-            if rec.is_bridge or rec.index in bridge_partner_ball_indices:
+            if getattr(rec, "has_active_bridge", False) or (rec.is_bridge and not getattr(rec, "is_bridge_cleared", False)):
                 badge_col = col_bridge
             elif rec.is_void_ng:
                 badge_col = col_void
