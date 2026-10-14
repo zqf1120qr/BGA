@@ -881,6 +881,7 @@ def export_inspection_pdf(
     preview_img_path: str | None = None,
     image_path: str | None = None,
     bridge_defects: List[Dict[str, Any]] | None = None,
+    progress_callback: Optional[Any] = None,
 ):
     """单张图像质检报告导出为 PDF (100% 遵照定制单片模板规范)"""
     from reportlab.lib.pagesizes import A4
@@ -899,8 +900,12 @@ def export_inspection_pdf(
         bottomMargin=1.5 * cm,
     )
 
+    if progress_callback:
+        progress_callback(1, 2, f"正在渲染缺陷高清图: {image_name}")
+
     actual_preview = preview_img_path
     target_img = image_path or preview_img_path
+    temp_preview_created = None
     if target_img and os.path.exists(target_img):
         try:
             actual_preview = render_defect_only_preview(
@@ -908,6 +913,8 @@ def export_inspection_pdf(
                 records=records,
                 bridge_defects=bridge_defects or [],
             )
+            if actual_preview and actual_preview != target_img:
+                temp_preview_created = actual_preview
         except Exception as e:
             print(f"[WARN] 渲染单图纯缺陷标注图失败: {e}")
 
@@ -922,7 +929,17 @@ def export_inspection_pdf(
         bridge_defects=bridge_defects,
     )
 
-    doc.build(story, onFirstPage=lambda c, d: c.showOutline())
+    if progress_callback:
+        progress_callback(2, 2, "正在编译并保存高精度 PDF 质检单...")
+
+    try:
+        doc.build(story, onFirstPage=lambda c, d: c.showOutline())
+    finally:
+        if temp_preview_created and os.path.exists(temp_preview_created):
+            try:
+                os.remove(temp_preview_created)
+            except Exception:
+                pass
 
 
 def export_batch_inspection_pdf(
@@ -930,6 +947,7 @@ def export_batch_inspection_pdf(
     batch_items: List[Dict[str, Any]],
     batch_summary: Optional[Dict[str, Any]] = None,
     batch_product_name: Optional[str] = None,
+    progress_callback: Optional[Any] = None,
 ):
     """
     批量检测结果合并导出至单一 PDF 文件 (全新工业报告体系):
@@ -997,9 +1015,14 @@ def export_batch_inspection_pdf(
     # 🌟 第三部分：各工件独立的【X射线检测分析报告单】
     # ==============================================================
     total_boards = len(batch_items)
+    temp_previews_to_clean: List[str] = []
+
     for idx, item in enumerate(batch_items, start=1):
-        story.append(PageBreak())
         img_name = item.get("image_name") or os.path.basename(item.get("image_path", f"item_{idx}"))
+        if progress_callback:
+            progress_callback(idx, total_boards + 1, f"正在渲染工件质检图 ({idx}/{total_boards}): {img_name}")
+
+        story.append(PageBreak())
         stats = item.get("summary_stats", {})
         records = item.get("records", [])
         preview_path = item.get("preview_img_path")
@@ -1015,6 +1038,8 @@ def export_batch_inspection_pdf(
                     records=records,
                     bridge_defects=bridge_defects,
                 )
+                if actual_preview and actual_preview != target_to_render:
+                    temp_previews_to_clean.append(actual_preview)
             except Exception as e:
                 print(f"[WARN] 批量渲染工件 #{idx} 纯缺陷图失败: {e}")
 
@@ -1033,4 +1058,15 @@ def export_batch_inspection_pdf(
         )
         story.extend(item_flowables)
 
-    doc.build(story, onFirstPage=lambda c, d: c.showOutline())
+    if progress_callback:
+        progress_callback(total_boards, total_boards + 1, "正在排版编译高精度 PDF 工业质检文档...")
+
+    try:
+        doc.build(story, onFirstPage=lambda c, d: c.showOutline())
+    finally:
+        for tmp_p in temp_previews_to_clean:
+            if tmp_p and os.path.exists(tmp_p):
+                try:
+                    os.remove(tmp_p)
+                except Exception:
+                    pass

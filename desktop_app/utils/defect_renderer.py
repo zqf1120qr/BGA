@@ -498,14 +498,26 @@ def render_defect_only_preview(
 
     painter.end()
 
-    # 输出高清无损 PNG 文件
+    # 输出高保真紧凑 JPEG 文件 (针对 PDF 工业报告排版进行分辨率适配与极速 DCT 流优化)
     if output_dir is None:
         output_dir = os.path.join(tempfile.gettempdir(), "xray_clean_reports")
     os.makedirs(output_dir, exist_ok=True)
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     stamp = int(time.time() * 1000)
-    out_path = os.path.join(output_dir, f"vis_clean_{base_name}_{stamp}.png")
-    q_img.save(out_path, "PNG")
+    out_path = os.path.join(output_dir, f"vis_clean_{base_name}_{stamp}.jpg")
+
+    # 针对超大图像做适度上限约束 (最大边 1600px 对应 A4 版面 250+ DPI，既高精度又大幅降低 PDF 构建延迟)
+    max_dim = 1600
+    if q_img.width() > max_dim or q_img.height() > max_dim:
+        q_save = q_img.scaled(
+            max_dim,
+            max_dim,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        q_save.save(out_path, "JPEG", 92)
+    else:
+        q_img.save(out_path, "JPEG", 92)
 
     return out_path

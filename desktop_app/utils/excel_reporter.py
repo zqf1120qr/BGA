@@ -38,23 +38,43 @@ def _sanitize_sheet_title(index: int, raw_name: str, used_titles: set) -> str:
     return candidate
 
 
+# 焊点全量明细表标准列宽映射 (免去全表数万单元格逐字扫描的庞大 CPU 延迟，极大提速多 Sheet 导出)
+SOLDER_COL_WIDTHS = {
+    "A": 12,  # 焊球序号
+    "B": 15,  # 中心X坐标(px)
+    "C": 15,  # 中心Y坐标(px)
+    "D": 14,  # 实测半径(px)
+    "E": 14,  # 空洞占比(%)
+    "F": 15,  # 少锡缩减率(%)
+    "G": 14,  # 桥连短路状态
+    "H": 15,  # 识别可靠度(%)
+    "I": 16,  # 单点结论
+    "J": 15,  # 人工复核状态
+    "K": 28,  # 复核说明与时间
+}
+
+
+def _apply_detail_sheet_col_widths(ws):
+    """为包含海量焊球的明细工作表秒级应用预设高精列宽并开启网格线"""
+    ws.views.sheetView[0].showGridLines = True
+    for col_letter, width in SOLDER_COL_WIDTHS.items():
+        ws.column_dimensions[col_letter].width = width
+
+
 def _apply_sheet_styles_and_col_width(ws, openpyxl_utils_col_letter):
-    """自适应列宽并强制开启网格线"""
+    """自适应列宽并强制开启网格线 (针对总览看板等小行数工作表)"""
     ws.views.sheetView[0].showGridLines = True
     for col in ws.columns:
         max_len = 0
         for cell in col:
             val_str = str(cell.value or '')
-            # 若包含换行符只取最长单行
             if "\n" in val_str:
                 line_lens = [len(l) for l in val_str.split("\n")]
                 max_len = max(max_len, max(line_lens) if line_lens else 0)
             else:
-                # 过滤公式文本长度影响
                 if val_str.startswith("="):
                     max_len = max(max_len, 14)
                 else:
-                    # 中文字符按 1.4 字符宽度加权
                     zh_len = sum(1.5 if ord(c) > 127 else 1.0 for c in val_str)
                     max_len = max(max_len, int(zh_len))
         col_letter = openpyxl_utils_col_letter(col[0].column)
@@ -67,21 +87,28 @@ def _append_solder_records_table(
     start_row: int,
     styles: Dict[str, Any]
 ):
-    """向指定工作表中追加焊点全量明细表"""
-    from openpyxl.styles import Alignment
-
+    """向指定工作表中追加焊点全量明细表 (复用预构建样式对象，零重复实例分配)"""
     headers = [
         "焊球序号", "中心X坐标(px)", "中心Y坐标(px)", "实测半径(px)",
         "空洞占比(%)", "少锡缩减率(%)", "桥连短路状态", "识别可靠度(%)",
         "单点结论", "人工复核状态", "复核说明与时间"
     ]
 
+    align_center = styles["align_center"]
+    font_header = styles["font_header"]
+    fill_header = styles["fill_header"]
+    thin_border = styles["thin_border"]
+    font_norm = styles["font_norm"]
+    fill_rev = styles["fill_rev"]
+    fill_ng = styles["fill_ng"]
+    fill_pass = styles["fill_pass"]
+
     for col_idx, h in enumerate(headers, start=1):
         cell = ws.cell(row=start_row, column=col_idx, value=h)
-        cell.font = styles["font_header"]
-        cell.fill = styles["fill_header"]
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = styles["thin_border"]
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_center
+        cell.border = thin_border
 
     cur_row = start_row
     for rec in records:
@@ -104,17 +131,15 @@ def _append_solder_records_table(
             rev_info,
         ]
 
+        # 行级复用填充色
+        target_fill = fill_rev if is_rev else (fill_ng if rec.final_is_ng else fill_pass)
+
         for col_idx, val in enumerate(row_vals, start=1):
             c = ws.cell(row=cur_row, column=col_idx, value=val)
-            c.font = styles["font_norm"]
-            c.border = styles["thin_border"]
-            c.alignment = Alignment(horizontal="center", vertical="center")
-            if is_rev:
-                c.fill = styles["fill_rev"]
-            elif rec.final_is_ng:
-                c.fill = styles["fill_ng"]
-            else:
-                c.fill = styles["fill_pass"]
+            c.font = font_norm
+            c.border = thin_border
+            c.alignment = align_center
+            c.fill = target_fill
 
 
 def export_inspection_excel(
@@ -122,6 +147,7 @@ def export_inspection_excel(
     image_name: str,
     summary_stats: Dict[str, Any],
     records: List[SolderBallRecord],
+    progress_callback: Optional[Any] = None,
 ):
     """单张图像质检数据导出为 Excel 表格"""
     import openpyxl
@@ -130,7 +156,7 @@ def export_inspection_excel(
 
     wb = openpyxl.Workbook()
 
-    # 样式配置
+    # 样式配置 (单例预初始化，消除重复实例化开销)
     font_title = Font(name="微软雅黑", size=16, bold=True, color="1E3A8A")
     font_bold = Font(name="微软雅黑", size=11, bold=True)
     font_norm = Font(name="微软雅黑", size=11)
@@ -148,6 +174,9 @@ def export_inspection_excel(
         bottom=Side(style="thin", color="CBD5E1"),
     )
 
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
+
     style_pack = {
         "font_bold": font_bold,
         "font_norm": font_norm,
@@ -157,7 +186,12 @@ def export_inspection_excel(
         "fill_rev": fill_rev,
         "fill_header": fill_header,
         "thin_border": thin_border,
+        "align_center": align_center,
+        "align_left": align_left,
     }
+
+    if progress_callback:
+        progress_callback(1, 3, "正在构建质检汇总报告...")
 
     # --- Sheet 1: 质检汇总报告 ---
     ws_summary = wb.active
@@ -198,13 +232,19 @@ def export_inspection_excel(
             val_cell.font = Font(name="微软雅黑", size=11, bold=True, color="0891B2")
             val_cell.fill = fill_rev
 
+    if progress_callback:
+        progress_callback(2, 3, "正在构建焊点全量明细表...")
+
     # --- Sheet 2: 焊点全量明细表 ---
     ws_details = wb.create_sheet(title="焊点全量明细")
     _append_solder_records_table(ws_details, records, start_row=1, styles=style_pack)
 
-    # 自适应列宽与边框网格
+    # 自适应列宽与边框网格 (明细表直接采用极速预置列宽，汇总表自适应)
     _apply_sheet_styles_and_col_width(ws_summary, get_column_letter)
-    _apply_sheet_styles_and_col_width(ws_details, get_column_letter)
+    _apply_detail_sheet_col_widths(ws_details)
+
+    if progress_callback:
+        progress_callback(3, 3, "正在保存 Excel 表格...")
 
     wb.save(save_path)
 
@@ -213,6 +253,7 @@ def export_batch_inspection_excel(
     save_path: str,
     batch_items: List[Dict[str, Any]],
     batch_summary: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Any] = None,
 ):
     """
     批量检测结果合并导出至单一 Excel 文件 (多 Sheet 结构):
@@ -225,7 +266,7 @@ def export_batch_inspection_excel(
 
     wb = openpyxl.Workbook()
 
-    # 样式配置
+    # 样式配置 (单例预定义，避免海量单元格重复构造)
     font_main_title = Font(name="微软雅黑", size=16, bold=True, color="1E3A8A")
     font_sheet_title = Font(name="微软雅黑", size=14, bold=True, color="1E3A8A")
     font_bold = Font(name="微软雅黑", size=11, bold=True)
@@ -246,6 +287,9 @@ def export_batch_inspection_excel(
         bottom=Side(style="thin", color="CBD5E1"),
     )
 
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
+
     style_pack = {
         "font_bold": font_bold,
         "font_norm": font_norm,
@@ -255,6 +299,8 @@ def export_batch_inspection_excel(
         "fill_rev": fill_rev,
         "fill_header": fill_header,
         "thin_border": thin_border,
+        "align_center": align_center,
+        "align_left": align_left,
     }
 
     # 计算批次宏观统计
@@ -272,6 +318,9 @@ def export_batch_inspection_excel(
     avg_elapsed = (total_elapsed / total_boards) if total_boards > 0 else 0.0
 
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if progress_callback:
+        progress_callback(0, total_boards + 1, "正在构建批次总览看板...")
 
     # ==============================================================
     # 🌟 Sheet 1: 批次检测总览
@@ -304,7 +353,7 @@ def export_batch_inspection_excel(
         c_v1 = ws_batch.cell(row=row_offset, column=2, value=v1)
         c_v1.font = font_bold if k1 in ("受检工件总数", "合格工件数量") else font_norm
         c_v1.border = thin_border
-        c_v1.alignment = Alignment(horizontal="center", vertical="center")
+        c_v1.alignment = align_center
         if k1 == "合格工件数量":
             c_v1.fill = fill_pass
         elif k1 == "不合格工件数" and ng_boards > 0:
@@ -319,7 +368,7 @@ def export_batch_inspection_excel(
         c_v2 = ws_batch.cell(row=row_offset, column=4, value=v2)
         c_v2.font = font_bold if k2 in ("批次最终判定", "批次合格率") else font_norm
         c_v2.border = thin_border
-        c_v2.alignment = Alignment(horizontal="center", vertical="center")
+        c_v2.alignment = align_center
         if k2 == "批次最终判定":
             c_v2.fill = fill_pass if ng_boards == 0 else fill_ng
             c_v2.font = Font(name="微软雅黑", size=11, bold=True, color="15803D" if ng_boards == 0 else "B91C1C")
@@ -338,7 +387,7 @@ def export_batch_inspection_excel(
         cell = ws_batch.cell(row=batch_table_start_row, column=col_i, value=h)
         cell.font = font_header
         cell.fill = fill_header
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = align_center
         cell.border = thin_border
 
     # 预先分配工件 Sheet 名称，确保唯一与双向超链接对应
@@ -376,11 +425,11 @@ def export_batch_inspection_excel(
             cell = ws_batch.cell(row=r_row, column=col_i, value=val)
             cell.font = font_norm
             cell.border = thin_border
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = align_center
 
             if col_i == 2:
                 # 工件名称居左
-                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.alignment = align_left
             elif col_i == 3:
                 # 整板判定
                 cell.font = Font(name="微软雅黑", size=10, bold=True, color="15803D" if is_pass else "B91C1C")
@@ -394,8 +443,11 @@ def export_batch_inspection_excel(
     # 🌟 Sheet 2..N: 各工件独立明细工作表
     # ==============================================================
     for idx, (item, sheet_title) in enumerate(zip(batch_items, sheet_title_list), start=1):
-        ws_item = wb.create_sheet(title=sheet_title)
         img_name = item.get("image_name") or os.path.basename(item.get("image_path", f"item_{idx}"))
+        if progress_callback:
+            progress_callback(idx, total_boards + 1, f"正在生成工件明细表 ({idx}/{total_boards}): {img_name}")
+
+        ws_item = wb.create_sheet(title=sheet_title)
         stats = item.get("summary_stats", {})
         records = item.get("records", [])
         b_status = stats.get("board_status", "UNKNOWN")
@@ -428,7 +480,7 @@ def export_batch_inspection_excel(
             c_v1 = ws_item.cell(row=offset, column=2, value=v1)
             c_v1.font = font_norm
             c_v1.border = thin_border
-            c_v1.alignment = Alignment(horizontal="center", vertical="center")
+            c_v1.alignment = align_center
 
             c_k2 = ws_item.cell(row=offset, column=3, value=k2)
             c_k2.font = font_bold
@@ -438,7 +490,7 @@ def export_batch_inspection_excel(
             c_v2 = ws_item.cell(row=offset, column=4, value=v2)
             c_v2.font = font_norm
             c_v2.border = thin_border
-            c_v2.alignment = Alignment(horizontal="center", vertical="center")
+            c_v2.alignment = align_center
 
             if k2 == "整板最终判定":
                 c_v2.font = Font(name="微软雅黑", size=11, bold=True, color="15803D" if is_pass else "B91C1C")
@@ -446,9 +498,13 @@ def export_batch_inspection_excel(
 
         # 焊点全量明细表 (从第 9 行开始)
         _append_solder_records_table(ws_item, records, start_row=9, styles=style_pack)
-        _apply_sheet_styles_and_col_width(ws_item, get_column_letter)
+        # 极速预置列宽与网格线 (免除数万单元格重复扫描)
+        _apply_detail_sheet_col_widths(ws_item)
 
     # 批次总览自适应宽度
     _apply_sheet_styles_and_col_width(ws_batch, get_column_letter)
+
+    if progress_callback:
+        progress_callback(total_boards, total_boards + 1, "正在保存 Excel 表格...")
 
     wb.save(save_path)

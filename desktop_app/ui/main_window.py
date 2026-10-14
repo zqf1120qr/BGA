@@ -1272,10 +1272,24 @@ class MainWindow(QMainWindow):
                 "PDF 文档 (*.pdf)"
             )
             if save_path:
-                from PySide6.QtWidgets import QApplication
+                from PySide6.QtWidgets import QApplication, QProgressDialog
                 from PySide6.QtCore import Qt
-                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                self.lbl_status_msg.setText(f"正在生成 {len(completed_items)} 张工件批量 PDF 报告...")
+
+                progress = QProgressDialog("正在准备导出批量 PDF 报告...", None, 0, len(completed_items) + 1, self)
+                progress.setWindowTitle("导出 PDF 质检单")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.setValue(0)
+                progress.show()
+                QApplication.processEvents()
+
+                def on_pdf_progress(cur, total, msg):
+                    progress.setMaximum(total)
+                    progress.setValue(cur)
+                    progress.setLabelText(msg)
+                    self.lbl_status_msg.setText(msg)
+                    QApplication.processEvents()
+
                 try:
                     folder_name = getattr(self, "current_folder_name", "")
                     if not folder_name and self.batch_files:
@@ -1296,8 +1310,9 @@ class MainWindow(QMainWindow):
                         save_path=save_path,
                         batch_items=completed_items,
                         batch_product_name=folder_name,
+                        progress_callback=on_pdf_progress,
                     )
-                    QApplication.restoreOverrideCursor()
+                    progress.close()
                     self.lbl_status_msg.setText(f"批量 PDF 报告导出完成: {os.path.basename(save_path)}")
                     QMessageBox.information(
                         self,
@@ -1305,7 +1320,7 @@ class MainWindow(QMainWindow):
                         f"已成功将 {len(completed_items)} 张工件质检单合并导出至单份 PDF 文件:\n{save_path}"
                     )
                 except Exception as e:
-                    QApplication.restoreOverrideCursor()
+                    progress.close()
                     QMessageBox.critical(self, "导出失败", f"批量生成 PDF 报告失败: {e}")
         else:
             # 单图导出
@@ -1321,6 +1336,24 @@ class MainWindow(QMainWindow):
                 "PDF 文档 (*.pdf)"
             )
             if save_path:
+                from PySide6.QtWidgets import QApplication, QProgressDialog
+                from PySide6.QtCore import Qt
+
+                progress = QProgressDialog("正在生成单图 PDF 质检报告...", None, 0, 2, self)
+                progress.setWindowTitle("导出 PDF 质检单")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.setValue(0)
+                progress.show()
+                QApplication.processEvents()
+
+                def on_single_pdf_progress(cur, total, msg):
+                    progress.setMaximum(total)
+                    progress.setValue(cur)
+                    progress.setLabelText(msg)
+                    self.lbl_status_msg.setText(msg)
+                    QApplication.processEvents()
+
                 try:
                     stats = self.session.get_summary_stats()
                     cur_params = self.param_panel.get_params() if hasattr(self, "param_panel") and self.param_panel else {}
@@ -1335,9 +1368,12 @@ class MainWindow(QMainWindow):
                         preview_img_path=self.session.inspected_image_path,
                         image_path=self.current_img_path,
                         bridge_defects=self.session.bridge_defects,
+                        progress_callback=on_single_pdf_progress,
                     )
+                    progress.close()
                     QMessageBox.information(self, "导出成功", f"PDF 质检单已保存至:\n{save_path}")
                 except Exception as e:
+                    progress.close()
                     QMessageBox.critical(self, "导出失败", f"生成 PDF 报告失败: {e}")
 
     def export_excel(self):
@@ -1388,13 +1424,31 @@ class MainWindow(QMainWindow):
                 "Excel 工作簿 (*.xlsx)"
             )
             if save_path:
-                from PySide6.QtWidgets import QApplication
+                from PySide6.QtWidgets import QApplication, QProgressDialog
                 from PySide6.QtCore import Qt
-                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-                self.lbl_status_msg.setText(f"正在生成 {len(completed_items)} 张工件批量 Excel 报表...")
+
+                progress = QProgressDialog("正在准备导出批量 Excel 报表...", None, 0, len(completed_items) + 1, self)
+                progress.setWindowTitle("导出 Excel 报表")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.setValue(0)
+                progress.show()
+                QApplication.processEvents()
+
+                def on_excel_progress(cur, total, msg):
+                    progress.setMaximum(total)
+                    progress.setValue(cur)
+                    progress.setLabelText(msg)
+                    self.lbl_status_msg.setText(msg)
+                    QApplication.processEvents()
+
                 try:
-                    export_batch_inspection_excel(save_path=save_path, batch_items=completed_items)
-                    QApplication.restoreOverrideCursor()
+                    export_batch_inspection_excel(
+                        save_path=save_path,
+                        batch_items=completed_items,
+                        progress_callback=on_excel_progress,
+                    )
+                    progress.close()
                     self.lbl_status_msg.setText(f"批量 Excel 报表导出完成: {os.path.basename(save_path)}")
                     QMessageBox.information(
                         self,
@@ -1402,7 +1456,7 @@ class MainWindow(QMainWindow):
                         f"已成功将 {len(completed_items)} 张工件质检数据合并导出至单一 Excel 文件 (多 Sheet 结构):\n{save_path}"
                     )
                 except Exception as e:
-                    QApplication.restoreOverrideCursor()
+                    progress.close()
                     QMessageBox.critical(self, "导出失败", f"批量生成 Excel 表格失败: {e}")
         else:
             # 单图导出
@@ -1418,15 +1472,36 @@ class MainWindow(QMainWindow):
                 "Excel 工作簿 (*.xlsx)"
             )
             if save_path:
+                from PySide6.QtWidgets import QApplication, QProgressDialog
+                from PySide6.QtCore import Qt
+
+                progress = QProgressDialog("正在生成单图 Excel 数据报表...", None, 0, 3, self)
+                progress.setWindowTitle("导出 Excel 报表")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.setValue(0)
+                progress.show()
+                QApplication.processEvents()
+
+                def on_single_excel_progress(cur, total, msg):
+                    progress.setMaximum(total)
+                    progress.setValue(cur)
+                    progress.setLabelText(msg)
+                    self.lbl_status_msg.setText(msg)
+                    QApplication.processEvents()
+
                 try:
                     export_inspection_excel(
                         save_path=save_path,
                         image_name=os.path.basename(self.current_img_path),
                         summary_stats=self.session.get_summary_stats(),
                         records=self.session.solder_records,
+                        progress_callback=on_single_excel_progress,
                     )
+                    progress.close()
                     QMessageBox.information(self, "导出成功", f"Excel 数据表已保存至:\n{save_path}")
                 except Exception as e:
+                    progress.close()
                     QMessageBox.critical(self, "导出失败", f"生成 Excel 表格失败: {e}")
 
     def _start_background_model_preload(self):
