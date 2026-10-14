@@ -1103,6 +1103,19 @@ class MainWindow(QMainWindow):
                     ng_void_thresh=ng_void_thresh,
                     undersize_thresh=undersize_thresh,
                 )
+                # 恢复该工件的历史人工复核记录
+                cached_rev = {}
+                for rev_p, rev_v in self.batch_review_overrides.items():
+                    if _same_file_path(rev_p, fp):
+                        cached_rev = rev_v
+                        break
+                if cached_rev:
+                    for b_idx, stat in cached_rev.get("balls", {}).items():
+                        tmp.manual_review_ball(b_idx, stat)
+                    for br_idx in cached_rev.get("bridges", set()):
+                        tmp.manual_review_bridge(br_idx, True)
+                    tmp.re_evaluate(ng_void_thresh, undersize_thresh)
+
                 self.thumbnail_bar.set_item_status(idx, tmp.board_status)
 
     def _on_view_mode_changed(self, mode: str):

@@ -119,7 +119,7 @@ class ThumbnailCard(QFrame):
         self.lbl_badge = QLabel("待检")
         self.lbl_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_badge.setFixedHeight(18)
-        self.lbl_badge.setFixedWidth(44)
+        self.lbl_badge.setFixedWidth(46)
         self.lbl_badge.setStyleSheet("""
             background-color: #1e293b;
             color: #64748b;
@@ -142,7 +142,8 @@ class ThumbnailCard(QFrame):
 
     def set_status(self, status: str):
         self.status = status
-        if status == "inspecting":
+        clean_status = str(status).strip()
+        if clean_status == "inspecting":
             self.lbl_badge.setText("质检中")
             self.lbl_badge.setToolTip("【当前状态: 正在质检】\n正在执行 AI 深度学习与几何判废分析...")
             self.lbl_badge.setStyleSheet("""
@@ -154,7 +155,19 @@ class ThumbnailCard(QFrame):
                 border-radius: 3px;
                 padding: 0px 2px;
             """)
-        elif status == "PASS":
+        elif "复核" in clean_status or clean_status == "PASS_REVIEWED":
+            self.lbl_badge.setText("PASS(复)")
+            self.lbl_badge.setToolTip("【当前结论: 合格 (人工复核)】\n检出缺陷均已人工核验排除，整板判定合格")
+            self.lbl_badge.setStyleSheet("""
+                background-color: #0e7490;
+                color: #cffafe;
+                font-size: 9px;
+                font-weight: bold;
+                border: none;
+                border-radius: 3px;
+                padding: 0px 1px;
+            """)
+        elif clean_status.startswith("PASS"):
             self.lbl_badge.setText("PASS")
             self.lbl_badge.setToolTip("【当前结论: 合格 (PASS)】\n焊点空洞率、少锡指标与桥连短路检测全部通过")
             self.lbl_badge.setStyleSheet("""
@@ -166,7 +179,7 @@ class ThumbnailCard(QFrame):
                 border-radius: 3px;
                 padding: 0px 2px;
             """)
-        elif status == "NG":
+        elif clean_status == "NG":
             self.lbl_badge.setText("NG")
             self.lbl_badge.setToolTip("【当前结论: 缺陷 (NG)】\n存在空洞超标、虚焊少锡或桥连短路缺陷")
             self.lbl_badge.setStyleSheet("""
@@ -379,8 +392,8 @@ class BatchThumbnailBar(QFrame):
             self._recalculate_badge_counts()
 
     def _recalculate_badge_counts(self):
-        pass_count = sum(1 for c in self.cards if c.status == "PASS")
-        ng_count = sum(1 for c in self.cards if c.status == "NG")
+        pass_count = sum(1 for c in self.cards if str(c.status).startswith("PASS"))
+        ng_count = sum(1 for c in self.cards if str(c.status) == "NG")
         self.lbl_badge_pass.setText(f"合格: {pass_count}")
         self.lbl_badge_ng.setText(f"缺陷: {ng_count}")
 
