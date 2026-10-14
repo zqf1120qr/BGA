@@ -95,6 +95,14 @@ def _global_exception_handler(exc_type, exc_value, exc_traceback):
 sys.excepthook = _global_exception_handler
 
 
+# =========================================================================
+# 🌟 [甲方试用时间限制] - 开发者打包前直接在此修改时间范围即可
+# =========================================================================
+TRIAL_START_TIME = "2026-10-01 00:00:00"   # 试用起始时间
+TRIAL_EXPIRE_TIME = "2026-10-25 23:59:59"  # 试用截止时间 (超期禁止打开)
+# =========================================================================
+
+
 def main():
     # 启用高分屏 High-DPI 渲染支持
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -115,6 +123,27 @@ def main():
     if icon_path and os.path.exists(icon_path):
         app_icon = QIcon(icon_path)
         app.setWindowIcon(app_icon)
+
+    # 🌟 甲方试用时间限制核验 (超期直接弹出提示并退出)
+    now = datetime.datetime.now()
+    try:
+        start_dt = datetime.datetime.strptime(TRIAL_START_TIME, "%Y-%m-%d %H:%M:%S")
+        expire_dt = datetime.datetime.strptime(TRIAL_EXPIRE_TIME, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        start_dt = datetime.datetime(2026, 10, 1)
+        expire_dt = datetime.datetime(2026, 11, 15, 23, 59, 59)
+
+    if now < start_dt or now > expire_dt:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None,
+            "软件试用期已截止",
+            f"抱歉，本软件当前不在允许试用的时间范围内。\n\n"
+            f"• 试用有效时间：{TRIAL_START_TIME.split()[0]} 至 {TRIAL_EXPIRE_TIME.split()[0]}\n"
+            f"• 当前系统时间：{now.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"如需继续试用或获取最新版本，请联系技术支持人员。"
+        )
+        sys.exit(0)
 
     # 毫秒级极速创建并呈现主工作站视窗 (无闪屏，系统级光标由原生启动器无缝管理)
     from desktop_app.ui.main_window import MainWindow
