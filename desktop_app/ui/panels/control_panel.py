@@ -218,7 +218,7 @@ class ControlActionPanel(QFrame):
     def _select_image_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择待检测的 BGA X-Ray 图像",
+            "选择待检测的 X射线 图像",
             "",
             "图像文件 (*.jpg *.jpeg *.png *.bmp *.tif);;所有文件 (*.*)"
         )
@@ -228,7 +228,7 @@ class ControlActionPanel(QFrame):
     def _select_folder(self):
         folder_path = QFileDialog.getExistingDirectory(
             self,
-            "选择包含 BGA 图像的待检目录"
+            "选择包含 X射线 图像的待检目录"
         )
         if folder_path:
             self.sig_open_folder.emit(folder_path)

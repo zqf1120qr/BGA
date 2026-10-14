@@ -567,7 +567,7 @@ class ParamPanel(QFrame):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "导出质检参数配方",
-            os.path.join(os.getcwd(), "BGA_质检参数方案.json"),
+            os.path.join(os.getcwd(), "X射线_质检参数方案.json"),
             "JSON 配方文件 (*.json)"
         )
         if path:

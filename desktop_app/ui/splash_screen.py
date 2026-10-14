@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站 - 科技感启动闪屏 (Splash Screen)
+🌟 X射线智能工业质检工作站 - 科技感启动闪屏 (Splash Screen)
 ------------------------------------------------------------
 在主界面加载重型科学计算库及深度学习引擎时提供丝滑即时的视觉反馈与进度指示。
 """
@@ -114,7 +114,7 @@ class BgaSplashScreen(QWidget):
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
 
-        lbl_title = QLabel("BGA 芯片智能工业质检工作站")
+        lbl_title = QLabel("X射线芯片智能工业质检工作站")
         lbl_title.setStyleSheet("""
             font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
             font-size: 19px;
@@ -125,7 +125,7 @@ class BgaSplashScreen(QWidget):
         """)
         title_box.addWidget(lbl_title)
 
-        lbl_sub = QLabel("BGA AI Industrial AOI Inspection Workstation")
+        lbl_sub = QLabel("X-ray AI Industrial AOI Inspection Workstation")
         lbl_sub.setStyleSheet("""
             font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
             font-size: 11px;

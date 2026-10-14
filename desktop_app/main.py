@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站 - 桌面端启动总入口
+🌟 X射线智能工业质检工作站 - 桌面端启动总入口
 =============================================
 运行方式:
     python desktop_app/main.py
@@ -60,7 +60,7 @@ if sys.platform == "win32":
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "Industrial_AI_AOI.BGA_AI_Inspector.Station.v1.0"
+            "Industrial_AI_AOI.XRay_AI_Inspector.Station.v1.0"
         )
     except Exception:
         pass
@@ -102,7 +102,7 @@ def main():
     )
 
     app = QApplication(sys.argv)
-    app.setApplicationName("BGA_AI_Inspector")
+    app.setApplicationName("X_Ray_AI_Inspector")
     app.setOrganizationName("Industrial_AI_AOI")
 
     # 全局默认字体

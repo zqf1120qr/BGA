@@ -1,7 +1,7 @@
 <div align="center">
 
-# 🔬 BGA AI Inspector
-### 工业级 BGA 芯片 X-Ray 探伤智能质检工作站
+# 🔬 X-ray AI Inspector
+### 工业级 X射线芯片智能质检工作站
 **面向半导体先进封装、高端 SMT 表面贴装与 PCB 组装产线的亚像素级自动化质检系统**
 
 [![Python Version](https://img.shields.io/badge/Python-3.9%20%7C%203.10%20%7C%203.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -26,7 +26,7 @@
 
 ## 📖 项目简介 (Overview)
 
-**BGA AI Inspector** 是一款面向工业 4.0 制造场景的高精度自动化 X-Ray 探伤分析桌面工作站。系统集成了**深度学习目标检测**、**自适应网格拓扑重构**、**微气泡亚像素级形态学分割**及**多焊球空间拓扑间隙动态分析**技术。
+**X-ray AI Inspector** 是一款面向工业 4.0 制造场景的高精度自动化 X-Ray 探伤分析桌面工作站。系统集成了**深度学习目标检测**、**自适应网格拓扑重构**、**微气泡亚像素级形态学分割**及**多焊球空间拓扑间隙动态分析**技术。
 
 针对 BGA（Ball Grid Array，球栅阵列）封装在回流焊接过程中常见的 **空洞超标 (Voiding)**、**连锡桥接 (Bridge)**、**少锡虚焊 (Insufficient Solder)** 及 **焊球缺失 (Missing Ball)**，提供从图像载入、ROI 裁剪、高精度推理、动态微调重算、人工复核闭环到双模报表（Excel / A4 PDF）存证的全流程工业级解决方案。
 

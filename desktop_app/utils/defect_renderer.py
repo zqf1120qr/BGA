@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA 质检报告专用 - 高清纯缺陷矢量标注图渲染器 (Defect Preview Renderer)
+X射线 质检报告专用 - 高清纯缺陷矢量标注图渲染器 (Defect Preview Renderer)
 ----------------------------------------------------------------------
 核心优化特性：
 1. 极致色彩区分度：桥连短路使用警戒鲜红 (#dc2626)，空洞超标使用高亮高对比明黄色 (#ffd000)，在灰度 X-Ray 图上一眼立分；
@@ -194,7 +194,7 @@ def render_defect_only_preview(
     # 保证存在 QGuiApplication 实例以安全进行字体指标测绘
     _app = QGuiApplication.instance()
     if _app is None:
-        _app = QGuiApplication(sys.argv if hasattr(sys, "argv") and sys.argv else ["bga_renderer"])
+        _app = QGuiApplication(sys.argv if hasattr(sys, "argv") and sys.argv else ["xray_renderer"])
 
     # 1. 优先读取完整高清原图
     raw_bgr = load_image_unicode(image_path)
@@ -500,7 +500,7 @@ def render_defect_only_preview(
 
     # 输出高清无损 PNG 文件
     if output_dir is None:
-        output_dir = os.path.join(tempfile.gettempdir(), "bga_clean_reports")
+        output_dir = os.path.join(tempfile.gettempdir(), "xray_clean_reports")
     os.makedirs(output_dir, exist_ok=True)
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]

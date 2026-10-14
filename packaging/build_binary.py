@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站 - 方案 B 一键二进制打包构建系统
+🌟 X射线智能工业质检工作站 - 方案 B 一键二进制打包构建系统
 =============================================================
 使用方式:
     python packaging/build_binary.py
@@ -127,7 +127,7 @@ def deploy_external_assets():
 
 def main():
     print("=" * 65)
-    print("       🌟 BGA 智能工业质检工作站 - 方案 B 一键打包构建系统")
+    print("       🌟 X射线智能工业质检工作站 - 方案 B 一键打包构建系统")
     print("=" * 65)
     log(f"项目根目录: {PROJECT_ROOT}")
     log(f"规范配置文件: {SPEC_FILE}")

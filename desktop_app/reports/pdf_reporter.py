@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA 工业级 PDF 质检单报表生成器
+X射线 工业级 PDF 质检单报表生成器
 转发至 desktop_app.utils.pdf_reporter 保持统一架构
 """
 from desktop_app.utils.pdf_reporter import (

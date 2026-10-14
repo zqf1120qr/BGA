@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站主窗口 (Main Window)
+🌟 X射线智能工业质检工作站主窗口 (Main Window)
 ----------------------------------------------
 现代化 Slate/Zinc 工业旗舰重构版：
 1. 原生无边框窗口 (Frameless Window) 支持顶部平滑拖拽与双击最大化；
@@ -123,11 +123,11 @@ class CustomTitleBar(QFrame):
             self.lbl_dot.setStyleSheet("color: #38bdf8; font-size: 12px;")
             layout.addWidget(self.lbl_dot)
 
-        self.lbl_title = QLabel("BGA 智能工业质检工作站")
+        self.lbl_title = QLabel("X射线智能工业质检工作站")
         self.lbl_title.setStyleSheet("font-weight: 800; font-size: 12px; color: #f8fafc; letter-spacing: 0.5px;")
         layout.addWidget(self.lbl_title)
 
-        self.lbl_sub = QLabel("| BGA AI Inspector v1.0")
+        self.lbl_sub = QLabel("| X-ray AI Inspector v1.0")
         self.lbl_sub.setStyleSheet("color: #64748b; font-size: 11px;")
         layout.addWidget(self.lbl_sub)
 
@@ -198,7 +198,8 @@ class MainWindow(QMainWindow):
         self.resize(1460, 920)
         self.setMinimumSize(1120, 720)
 
-        # 绑定应用与窗口专属图标 (确保任务栏与系统原生显示)
+        # 绑定应用与窗口专属图标与标题 (确保任务栏与系统原生显示)
+        self.setWindowTitle("X射线智能工业质检工作站")
         icon_path = get_app_icon_path()
         if icon_path and os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
@@ -852,7 +853,7 @@ class MainWindow(QMainWindow):
     def _handle_enter_crop(self):
         """进入 ROI 裁剪模式前安全检查"""
         if self.active_cv_mat is None:
-            QMessageBox.information(self, "提示", "请先打开待检测的 BGA X-Ray 图像，再进行 ROI 裁剪")
+            QMessageBox.information(self, "提示", "请先打开待检测的 X射线 图像，再进行 ROI 裁剪")
             self.panel_control.show_crop_actions(False)
             return
         self.canvas.enter_crop_mode()
@@ -887,7 +888,7 @@ class MainWindow(QMainWindow):
     def start_inspection(self):
         """触发深度学习质检"""
         if self.active_cv_mat is None:
-            QMessageBox.warning(self, "提示", "请先打开待检测的 BGA X-Ray 图像")
+            QMessageBox.warning(self, "提示", "请先打开待检测的 X射线 图像")
             return
 
         if len(self.batch_files) > 1:
@@ -896,7 +897,7 @@ class MainWindow(QMainWindow):
             # 若是单图且进行了裁剪，写入临时文件传递给算法
             if self.is_image_cropped:
                 temp_dir = tempfile.gettempdir()
-                temp_path = os.path.join(temp_dir, f"bga_crop_{os.path.basename(self.current_img_path)}")
+                temp_path = os.path.join(temp_dir, f"xray_crop_{os.path.basename(self.current_img_path)}")
                 cv2.imencode(".jpg", self.active_cv_mat)[1].tofile(temp_path)
                 self.crop_temp_map[temp_path] = self.current_img_path
                 target_path = temp_path
@@ -1250,7 +1251,7 @@ class MainWindow(QMainWindow):
 
         if export_as_batch:
             now_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            default_name = f"BGA_Batch_Report_{now_tag}.pdf"
+            default_name = f"X射线_Batch_Report_{now_tag}.pdf"
             save_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "批量合并导出 PDF 工业质检单",
@@ -1267,7 +1268,7 @@ class MainWindow(QMainWindow):
                     if not folder_name and self.batch_files:
                         folder_name = os.path.basename(os.path.dirname(os.path.abspath(self.batch_files[0])))
                     if not folder_name:
-                        folder_name = "BGA 批量工件"
+                        folder_name = "X射线 批量工件"
 
                     # 注入当前判废门限参数
                     cur_params = self.param_panel.get_params() if hasattr(self, "param_panel") and self.param_panel else {}
@@ -1299,7 +1300,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "提示", "当前工件尚未产生质检结果，请先执行质检")
                 return
             cur_name = os.path.splitext(os.path.basename(self.current_img_path))[0]
-            default_name = f"BGA_Report_{cur_name}.pdf"
+            default_name = f"X射线_Report_{cur_name}.pdf"
             save_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "导出 PDF 工业质检单",
@@ -1366,7 +1367,7 @@ class MainWindow(QMainWindow):
 
         if export_as_batch:
             now_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            default_name = f"BGA_Batch_Details_{now_tag}.xlsx"
+            default_name = f"X射线_Batch_Details_{now_tag}.xlsx"
             save_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "批量合并导出 Excel 原始数据明细表",
@@ -1396,7 +1397,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "提示", "当前工件尚未产生质检结果，请先执行质检")
                 return
             cur_name = os.path.splitext(os.path.basename(self.current_img_path))[0]
-            default_name = f"BGA_Details_{cur_name}.xlsx"
+            default_name = f"X射线_Details_{cur_name}.xlsx"
             save_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "导出 Excel 原始数据明细表",

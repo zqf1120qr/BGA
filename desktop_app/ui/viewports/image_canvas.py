@@ -466,7 +466,7 @@ class ImageCanvasView(QGraphicsView):
 
             painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
             painter.setPen(QColor(148, 163, 184))
-            painter.drawText(QRectF(bx, by + 18, box_w, 24), Qt.AlignmentFlag.AlignCenter, "BGA 图像显示区域 (请先打开图片)")
+            painter.drawText(QRectF(bx, by + 18, box_w, 24), Qt.AlignmentFlag.AlignCenter, "X射线 图像显示区域 (请先打开图片)")
 
             painter.setFont(QFont("Segoe UI", 9))
             painter.setPen(QColor(100, 116, 139))

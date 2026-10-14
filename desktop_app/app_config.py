@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA 桌面工作站配置管理模块 (App Configuration)
+X射线 桌面工作站配置管理模块 (App Configuration)
 """
 from __future__ import annotations
 import json
@@ -94,7 +94,7 @@ class AppConfigManager:
         try:
             recipe = {
                 "format": "BGA_INSPECTOR_RECIPE_V1",
-                "description": "BGA 芯片智能工业质检工作站 - 工艺阈值配方文件",
+                "description": "X射线芯片智能工业质检工作站 - 工艺阈值配方文件",
                 "params": {
                     "conf_threshold": round(float(self.config.conf_threshold), 4),
                     "ng_void_threshold": round(float(self.config.ng_void_threshold), 4),

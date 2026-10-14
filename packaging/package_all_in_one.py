@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站 - 全能自适应便携式打包构建系统 (Package Builder)
+🌟 X射线智能工业质检工作站 - 全能自适应便携式打包构建系统 (Package Builder)
 ======================================================================
 功能特性：
 1. 自动收集源码、依赖、模型权重 (best.pt)、样式资源与样本图像；
@@ -227,7 +227,7 @@ class BGALauncher
         {
             MessageBox.Show(
                 "未能找到系统内置 Python 运行环境：\n" + pyw + "\n\n请确保软件包已完整解压，且保留 runtime 文件夹。",
-                "BGA 智能工业质检工作站 - 启动错误",
+                "X射线智能工业质检工作站 - 启动错误",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error
             );
@@ -239,7 +239,7 @@ class BGALauncher
         {
             MessageBox.Show(
                 "未能找到工作站主程序脚本：\n" + mainScript + "\n\n请确认程序目录结构完整。",
-                "BGA 智能工业质检工作站 - 启动错误",
+                "X射线智能工业质检工作站 - 启动错误",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error
             );
@@ -275,7 +275,7 @@ class BGALauncher
         {
             MessageBox.Show(
                 "工作站启动异常：\n" + ex.Message,
-                "BGA 智能工业质检工作站 - 启动失败",
+                "X射线智能工业质检工作站 - 启动失败",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error
             );
@@ -312,10 +312,10 @@ def create_auxiliary_scripts():
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
-title BGA AI Inspector - Debug Console Mode
+title X-ray AI Inspector - Debug Console Mode
 
 echo ==============================================================
-echo       BGA 智能工业质检工作站 (控制台调试模式)
+echo       X射线智能工业质检工作站 (控制台调试模式)
 echo ==============================================================
 set "PROJ_ROOT=%~dp0"
 if "%PROJ_ROOT:~-1%"=="\" set "PROJ_ROOT=%PROJ_ROOT:~0,-1%"
@@ -339,7 +339,7 @@ if !ERRORLEVEL! neq 0 (
     # 2. 使用说明文档
     readme_txt = APP_DIST_DIR / "使用说明.txt"
     readme_content = """======================================================================
-  BGA 智能工业质检工作站 (BGA AI Inspector) - 便携式全能发行版 v1.0
+  X射线智能工业质检工作站 (X-ray AI Inspector) - 便携式全能发行版 v1.0
 ======================================================================
 
 【快速启动】
@@ -368,7 +368,7 @@ if !ERRORLEVEL! neq 0 (
     # 3. Inno Setup 打包工程脚本
     iss_file = APP_DIST_DIR / "Inno_Setup_Installer.iss"
     iss_content = r"""; Inno Setup 自动化安装包生成脚本
-#define MyAppName "BGA智能工业质检工作站"
+#define MyAppName "X射线智能工业质检工作站"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "AOI_Industrial_AI"
 #define MyAppExeName "BGA_AI_Inspector.exe"
@@ -450,7 +450,7 @@ def verify_packaged_app():
 def main():
     t0 = time.time()
     print("=" * 66)
-    print("      [+] BGA 智能工业质检工作站 - 全能自适应便携包构建流水线")
+    print("      [+] X射线智能工业质检工作站 - 全能自适应便携包构建流水线")
     print("=" * 66)
 
     check_prerequisites()

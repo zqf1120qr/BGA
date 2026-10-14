@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-生成工业级 BGA 质检报告 Word 模板 (.docx)
+生成工业级 X射线 质检报告 Word 模板 (.docx)
 1:1 完美复刻现有 PDF 报告版式与视觉规范，提供清晰的占位符变量供用户可视化修改排版。
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ def create_bga_report_template(output_path: str):
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_title.paragraph_format.space_before = Pt(0)
     p_title.paragraph_format.space_after = Pt(8)
-    run_title = p_title.add_run("BGA 工业检测分析报告单")
+    run_title = p_title.add_run("X射线 工业检测分析报告单")
     run_title.font.name = '微软雅黑'
     run_title._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
     run_title.font.size = Pt(18)

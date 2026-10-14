@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA Word 模板报告生成器 (Word Reporter)
+X射线 Word 模板报告生成器 (Word Reporter)
 ---------------------------------------
 基于用户可视化的 Word 模板 (.docx) 生成工业质检报告：
 1. 支持用户自由在 Word 中修改排版、标题、LOGO、表格样式与文字；

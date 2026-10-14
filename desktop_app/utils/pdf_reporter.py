@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA 工业级 PDF 质检单报表生成器 (PDF Reporter)
+X射线 工业级 PDF 质检单报表生成器 (PDF Reporter)
 -------------------------------------------------
 严格遵照公司质量标准与用户定制版式渲染 A4 工业质检报告：
 1. 首页: 《X 射线检测报告》标准审批单:
@@ -271,7 +271,7 @@ def _build_batch_xray_cover_flowables(
 
     conclusion_html = (
         f"<font size='9.5'><b>【检验结论】</b></font><br/>"
-        f"&nbsp;&nbsp;&nbsp;&nbsp;本次共送检 BGA 工件 <b>{total_boards}</b> 片，受检焊球 <b>{total_solders}</b> 点。<br/>"
+        f"&nbsp;&nbsp;&nbsp;&nbsp;本次共送检 X射线 工件 <b>{total_boards}</b> 片，受检焊球 <b>{total_solders}</b> 点。<br/>"
         f"&nbsp;&nbsp;&nbsp;&nbsp;经 X 射线智能算法综合检测与人工复核审计：<br/>"
         f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;● <b>空洞缺陷：</b>合格 {pass_void_boards} 片，超标不良 {ng_void_boards} 片 (累计检出超标焊球 {total_void_ng} 处)；<br/>"
         f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;● <b>桥连短路：</b>合格 {pass_bridge_boards} 片，短路不良 {ng_bridge_boards} 片 (累计检出桥连短路 {total_bridge} 对)；<br/>"
@@ -964,7 +964,7 @@ def export_batch_inspection_pdf(
             if parent_dir:
                 folder_name = parent_dir
     if not folder_name:
-        folder_name = "BGA 批量送检板卡"
+        folder_name = "X射线 批量送检板卡"
 
     overview_key = "bga_batch_overview"
     list_key = "bga_batch_item_list"

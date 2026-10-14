@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title BGA AI Inspector Launcher
+title X-ray AI Inspector Launcher
 
 echo ==============================================================
-echo       BGA Desktop Inspection System Launcher
+echo       X-ray Desktop Inspection System Launcher
 echo ==============================================================
 echo [*] Searching for available Python environment...
 

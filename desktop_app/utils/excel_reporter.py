@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BGA 质检数据 Excel 结构化报表生成器 (Excel Reporter)
+X射线 质检数据 Excel 结构化报表生成器 (Excel Reporter)
 -------------------------------------------------------
 将整板质检汇总指标及所有焊点的几何坐标、空洞率、虚焊比、短路状态导出为美观的 .xlsx 表格。
 支持单张质检报表导出与多工件批量合并报表 (多 Sheet 结构) 导出。
@@ -163,7 +163,7 @@ def export_inspection_excel(
     ws_summary = wb.active
     ws_summary.title = "质检汇总报告"
 
-    ws_summary["A1"] = "BGA 工业检测分析报表"
+    ws_summary["A1"] = "X射线 工业检测分析报表"
     ws_summary["A1"].font = font_title
     ws_summary.merge_cells("A1:D1")
 
@@ -280,7 +280,7 @@ def export_batch_inspection_excel(
     ws_batch.title = "批次检测总览"
 
     # 主标题
-    ws_batch["A1"] = "BGA 批量工业质检综合汇总报表"
+    ws_batch["A1"] = "X射线 批量工业质检综合汇总报表"
     ws_batch["A1"].font = font_main_title
     ws_batch.merge_cells("A1:K1")
 
@@ -402,7 +402,7 @@ def export_batch_inspection_excel(
         is_pass = str(b_status).startswith("PASS")
 
         # 顶部标题栏
-        ws_item["A1"] = f"BGA 工件质检明细单 - {img_name}"
+        ws_item["A1"] = f"X射线 工件质检明细单 - {img_name}"
         ws_item["A1"].font = font_sheet_title
         ws_item.merge_cells("A1:D1")
 
