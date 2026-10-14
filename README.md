@@ -255,10 +255,10 @@ run_desktop_app.bat
 build_binary_package.bat
 ```
 
-打包完成后，`dist/BGA_AI_Inspector` 目录即可独立分发。部署结构如下：
+打包完成后，`dist/X-Ray_AI_Inspector` 目录即可独立分发。部署结构如下：
 ```text
-BGA_AI_Inspector/
-├── BGA_AI_Inspector.exe        # [核心主程序] 双击即可运行
+X-Ray_AI_Inspector/
+├── X-Ray_AI_Inspector.exe        # [核心主程序] 双击即可运行
 ├── backend/                    # [外部模型目录]
 │   └── best.pt                 # 产线可在此热替换最新模型
 ├── assets/                     # 窗口图标与静态资源
@@ -274,10 +274,10 @@ BGA/
 ├── assets/                     # 系统静态图标 (app_icon.ico 等)
 ├── backend/                    # 深度学习模型、YOLO 管道与核心算法
 │   ├── best.pt                 # 核心检测权重
-│   ├── bga_pipeline.py         # 四维质检综合分析流水线
-│   ├── bga_void_seg.py         # 亚像素微气泡分割算法
-│   ├── bga_bridge_detect.py    # 桥连短路拓扑分析算法
-│   ├── bga_insufficient_detect.py # 少锡虚焊半径缩减算法
+│   ├── xray_pipeline.py        # 四维质检综合分析流水线
+│   ├── xray_void_seg.py        # 亚像素微气泡分割算法
+│   ├── xray_bridge_detect.py   # 桥连短路拓扑分析算法
+│   ├── xray_insufficient_detect.py # 少锡虚焊半径缩减算法
 │   └── models/                 # 网络结构定义
 ├── desktop_app/                # PySide6 工业工作站前端源码
 │   ├── main.py                 # 客户端程序启动入口

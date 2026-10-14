@@ -575,3 +575,8 @@ def save_result_json(result_item: ResultDict, out_path: str):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(clean, f, indent=2, ensure_ascii=False)
     return out_path
+
+
+# 跨语种与工业标准命名兼容别名 (X-ray / X射线)
+XRayDetector = BGADetector
+

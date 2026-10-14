@@ -5,7 +5,7 @@
 功能特性：
 1. 自动收集源码、依赖、模型权重 (best.pt)、样式资源与样本图像；
 2. 完整集成并打包自适应 CUDA+CPU 便携运行时 (Portable Python Runtime)；
-3. 编译原生 Win32 GUI 启动器 (BGA_AI_Inspector.exe)，集成高清芯片图标与零黑窗口体验；
+3. 编译原生 Win32 GUI 启动器 (X-Ray_AI_Inspector.exe)，集成高清芯片图标与零黑窗口体验；
 4. 附赠调试启动脚本 (run_debug.bat) 与 Inno Setup 安装包脚本；
 5. 打包完成后自动执行自动化离屏启动测试，确保 100% 可用。
 """
@@ -27,7 +27,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DIST_ROOT = PROJECT_ROOT / "dist"
-APP_DIST_DIR = DIST_ROOT / "BGA_AI_Inspector"
+APP_DIST_DIR = DIST_ROOT / "X-Ray_AI_Inspector"
 SOURCE_CONDA_ENV = Path(r"D:\Anaconda3\envs\torch")
 CSC_COMPILER = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
 
@@ -196,16 +196,16 @@ def copy_runtime_environment():
 
 
 def compile_native_launcher(icon_path: Path):
-    log("正在编译原生 Win32 GUI 启动器 (BGA_AI_Inspector.exe)...")
+    log("正在编译原生 Win32 GUI 启动器 (X-Ray_AI_Inspector.exe)...")
     cs_source = APP_DIST_DIR / "launcher.cs"
-    exe_target = APP_DIST_DIR / "BGA_AI_Inspector.exe"
+    exe_target = APP_DIST_DIR / "X-Ray_AI_Inspector.exe"
 
     cs_code = r"""using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 
-class BGALauncher
+class XRayLauncher
 {
     [STAThread]
     static int Main(string[] args)
@@ -300,7 +300,7 @@ class BGALauncher
     if ret.returncode != 0:
         raise RuntimeError(f"编译启动器失败:\n{ret.stdout}\n{ret.stderr}")
 
-    log("原生 Win32 启动器 BGA_AI_Inspector.exe 编译成功！")
+    log("原生 Win32 启动器 X-Ray_AI_Inspector.exe 编译成功！")
 
 
 def create_auxiliary_scripts():
@@ -343,7 +343,7 @@ if !ERRORLEVEL! neq 0 (
 ======================================================================
 
 【快速启动】
-1. 直接双击运行根目录下的【BGA_AI_Inspector.exe】即可启动工作站（无控制台黑窗口）；
+1. 直接双击运行根目录下的【X-Ray_AI_Inspector.exe】即可启动工作站（无控制台黑窗口）；
 2. 如需查看详细运行日志或进行工程排查，可双击运行【run_debug.bat】。
 
 【硬件自适应能力说明】
@@ -354,7 +354,7 @@ if !ERRORLEVEL! neq 0 (
   系统启动后将自动平滑降级并点亮【黄色 CPU 指示灯】，自动调用全核多线程并发推理，绝不闪退崩溃。
 
 【目录结构规范】
-- BGA_AI_Inspector.exe : 原生无边框桌面程序启动器
+- X-Ray_AI_Inspector.exe : 原生无边框桌面程序启动器
 - run_debug.bat        : 控制台调试启动脚本
 - runtime/             : 便携式独立 Python 运行环境（请勿修改）
 - backend/             : YOLO 深度学习模型与工业算法流水线
@@ -371,7 +371,7 @@ if !ERRORLEVEL! neq 0 (
 #define MyAppName "X射线智能工业质检工作站"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "AOI_Industrial_AI"
-#define MyAppExeName "BGA_AI_Inspector.exe"
+#define MyAppExeName "X-Ray_AI_Inspector.exe"
 
 [Setup]
 AppId={{E68A8E9A-C1A3-41A8-B603-9A2E77D3D2B1}
@@ -381,7 +381,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=..\installer_output
-OutputBaseFilename=BGA_AI_Inspector_Setup_v1.0
+OutputBaseFilename=X-Ray_AI_Inspector_Setup_v1.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -471,7 +471,7 @@ def main():
     print("=" * 66)
     print(f"[OK] 打包全流程圆满完成！总耗时: {elapsed} 秒")
     print(f"[*] 发布输出目录: {APP_DIST_DIR}")
-    print("  |-- BGA_AI_Inspector.exe      (双击秒开，无黑窗口)")
+    print("  |-- X-Ray_AI_Inspector.exe    (双击秒开，无黑窗口)")
     print("  |-- run_debug.bat             (控制台日志调试模式)")
     print("  |-- Inno_Setup_Installer.iss  (安装包制作工程脚本)")
     print("  |-- 使用说明.txt")

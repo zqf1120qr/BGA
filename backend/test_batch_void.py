@@ -16,7 +16,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from bga_pipeline import inspect_bga_void
+from xray_pipeline import inspect_xray_void as inspect_bga_void
 
 
 def run_batch_void_test():

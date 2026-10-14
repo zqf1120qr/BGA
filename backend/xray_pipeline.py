@@ -32,7 +32,7 @@ from utils.grid_node_refiner import (
     GridNodeRefineConfig,
     apply_grid_node_refine_to_result_item,
 )
-from bga_void_seg import (
+from xray_void_seg import (
     PredictionResult,
     get_detector_instance,
     predict_and_generate_mask,
@@ -44,13 +44,13 @@ from bga_void_seg import (
     GRID_REFINE_CFG,
     SOLDER_MIN_RADIUS,
 )
-from bga_bridge_detect import (
+from xray_bridge_detect import (
     BridgeDefect,
     detect_bga_bridges,
     COLOR_BRIDGE_BOX,
     COLOR_BRIDGE_BALL,
 )
-from bga_insufficient_detect import (
+from xray_insufficient_detect import (
     InsufficientSolderDefect,
     SolderAreaStats,
     detect_insufficient_solders,
@@ -722,6 +722,13 @@ def inspect_bga(
         )
 
 
-# 向后兼容别名 (保持旧代码调用不报错)
+# 向后兼容与 X-ray / X射线 工业规范别名
 inspect_bga_board = inspect_bga_comprehensive
+inspect_xray = inspect_bga
+inspect_xray_void = inspect_bga_void
+inspect_xray_bridge = inspect_bga_bridge
+inspect_xray_insufficient = inspect_bga_insufficient
+inspect_xray_comprehensive = inspect_bga_comprehensive
+inspect_xray_board = inspect_bga_comprehensive
+
 

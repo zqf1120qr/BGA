@@ -277,3 +277,8 @@ def draw_insufficient_defects(
             )
 
     return vis_img
+
+
+# 规范别名
+detect_xray_insufficient = detect_insufficient_solders
+

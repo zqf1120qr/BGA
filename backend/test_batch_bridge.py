@@ -16,7 +16,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from bga_pipeline import inspect_bga_bridge
+from xray_pipeline import inspect_xray_bridge as inspect_bga_bridge
 
 
 def run_batch_bridge_test():

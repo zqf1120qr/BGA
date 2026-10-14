@@ -36,10 +36,8 @@ echo [*] 正在使用 Python 启动打包引擎: "!TARGET_PYTHON!"
 
 if !ERRORLEVEL! EQU 0 (
     echo [*] 打包完成！正在为您打开产物输出目录...
-    if exist "%~dp0dist\BGA_AI_Inspector" (
-        explorer "%~dp0dist\BGA_AI_Inspector"
-    ) else if exist "%~dp0dist\BGA_AI_Inspector_Binary" (
-        explorer "%~dp0dist\BGA_AI_Inspector_Binary"
+    if exist "%~dp0dist\X-Ray_AI_Inspector" (
+        explorer "%~dp0dist\X-Ray_AI_Inspector"
     )
 ) else (
     echo [!] 打包过程中发生错误，请查看上方输出信息。

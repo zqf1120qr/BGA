@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-🌟 BGA 智能工业质检工作站 - PyInstaller 工业级二进制规范构建配置
+🌟 X射线智能工业质检工作站 - PyInstaller 工业级二进制规范构建配置
 =============================================================
-构建目标: 方案 B (源码全封闭为二进制，全能自适应 GPU/CPU 目录部署包)
+构建目标: 源码全封闭为二进制，全能自适应 GPU/CPU 目录部署包
+产物名称: X-Ray_AI_Inspector.exe
 """
 import os
 import sys
@@ -67,12 +68,12 @@ hidden_imports = [
     "utils.torch_utils",
     "utils.tool_kit",
     "utils.grid_node_refiner",
-    # BGA 后端质检算法流水线
+    # X-ray / X射线 后端质检算法流水线
     "detector",
-    "bga_pipeline",
-    "bga_void_seg",
-    "bga_bridge_detect",
-    "bga_insufficient_detect",
+    "xray_pipeline",
+    "xray_void_seg",
+    "xray_bridge_detect",
+    "xray_insufficient_detect",
     # 桌面工作站各子模块
     "desktop_app",
     "desktop_app.app_config",
@@ -130,7 +131,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="BGA_AI_Inspector",
+    name="X-Ray_AI_Inspector",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -152,5 +153,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="BGA_AI_Inspector",
+    name="X-Ray_AI_Inspector",
 )

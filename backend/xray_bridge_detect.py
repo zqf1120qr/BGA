@@ -435,6 +435,9 @@ def detect_bga_bridges(
             # 可选绘制
             if draw_on_result and result_img is not None:
                 cv2.rectangle(result_img, (x1_box, y1_box), (x2_box, y2_box), COLOR_BRIDGE_BOX, 1)
-                cv2.circle(result_img, bridge_center, bridge_radius, COLOR_BRIDGE_BALL, 1)
-
     return detected_defects
+
+
+# 规范别名
+detect_xray_bridges = detect_bga_bridges
+

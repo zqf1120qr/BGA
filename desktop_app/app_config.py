@@ -93,7 +93,7 @@ class AppConfigManager:
         """导出当前核心质检判废阈值与配方至指定 JSON 文件"""
         try:
             recipe = {
-                "format": "BGA_INSPECTOR_RECIPE_V1",
+                "format": "X_RAY_INSPECTOR_RECIPE_V1",
                 "description": "X射线芯片智能工业质检工作站 - 工艺阈值配方文件",
                 "params": {
                     "conf_threshold": round(float(self.config.conf_threshold), 4),

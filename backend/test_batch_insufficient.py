@@ -16,7 +16,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from bga_pipeline import inspect_bga_insufficient
+from xray_pipeline import inspect_xray_insufficient as inspect_bga_insufficient
 
 
 def run_batch_insufficient_test():

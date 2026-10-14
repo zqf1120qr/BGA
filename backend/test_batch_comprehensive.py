@@ -16,7 +16,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from bga_pipeline import inspect_bga_comprehensive
+from xray_pipeline import inspect_xray_comprehensive as inspect_bga_comprehensive
 
 
 def run_batch_comprehensive_test():

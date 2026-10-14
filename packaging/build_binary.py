@@ -6,10 +6,11 @@
     python packaging/build_binary.py
 功能:
     1. 自动检测并安全关闭运行中的旧程序 (解除 Windows 文件锁)；
-    2. 调度 PyInstaller 基于 packaging/bga_inspector.spec 执行二进制编译；
+    2. 调度 PyInstaller 基于 packaging/x_ray_inspector.spec 执行二进制编译；
     3. 自动同步外部可热替换权重 (backend/best.pt) 与测试数据；
     4. 规范收纳 app_icon.ico 至 _internal/ 目录，保持根目录极致清爽；
-    5. 生成即用型独立部署包: dist/BGA_AI_Inspector_Binary/。
+    5. 生成即用型独立部署包: dist/X-Ray_AI_Inspector/。
+    6. 主程序可执行文件名称: X-Ray_AI_Inspector.exe。
 """
 import os
 import sys
@@ -26,9 +27,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
-SPEC_FILE = os.path.join(CURRENT_DIR, "bga_inspector.spec")
-# 生成即用型独立部署包目录: dist/BGA_AI_Inspector/
-DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "BGA_AI_Inspector")
+SPEC_FILE = os.path.join(CURRENT_DIR, "x_ray_inspector.spec")
+# 生成即用型独立部署包目录: dist/X-Ray_AI_Inspector/
+DIST_DIR = os.path.join(PROJECT_ROOT, "dist", "X-Ray_AI_Inspector")
 INTERNAL_DIR = os.path.join(DIST_DIR, "_internal")
 
 
@@ -40,10 +41,12 @@ def check_and_kill_old_process():
     log("检查是否有旧版本工作站正在运行...")
     try:
         if sys.platform == "win32":
-            subprocess.run(
-                ["powershell", "-Command", "Stop-Process -Name 'BGA_AI_Inspector' -Force -ErrorAction SilentlyContinue"],
-                capture_output=True
-            )
+            # 兼容新旧进程名清理
+            for proc_name in ["X-Ray_AI_Inspector", "X_Ray_AI_Inspector", "BGA_AI_Inspector"]:
+                subprocess.run(
+                    ["powershell", "-Command", f"Stop-Process -Name '{proc_name}' -Force -ErrorAction SilentlyContinue"],
+                    capture_output=True
+                )
             time.sleep(1)
     except Exception:
         pass
@@ -112,15 +115,15 @@ def deploy_external_assets():
             f.write(md_content)
         log("已随包生成《用户操作与部署手册.txt》与《用户操作与部署手册.md》！")
 
-    # 清理旧版简易指南文件 (若存在)
-    # 清理旧命名目录 dist/BGA_AI_Inspector_Binary (若存在)
-    old_binary_dir = os.path.join(PROJECT_ROOT, "dist", "BGA_AI_Inspector_Binary")
-    if os.path.exists(old_binary_dir):
-        log("清理历史旧命名目录 dist/BGA_AI_Inspector_Binary...")
-        try:
-            shutil.rmtree(old_binary_dir, ignore_errors=True)
-        except Exception:
-            pass
+    # 清理历史旧命名目录 (若存在)
+    for old_name in ["BGA_AI_Inspector", "BGA_AI_Inspector_Binary"]:
+        old_dir = os.path.join(PROJECT_ROOT, "dist", old_name)
+        if os.path.exists(old_dir):
+            log(f"清理历史旧命名目录 dist/{old_name}...")
+            try:
+                shutil.rmtree(old_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     log("资产组织与规整部署完成！")
 
@@ -140,7 +143,7 @@ def main():
     print("=" * 65)
     print("✅ 打包构建成功！")
     print(f"📦 输出目录: {DIST_DIR}")
-    print(f"🚀 主程序:   {os.path.join(DIST_DIR, 'BGA_AI_Inspector.exe')}")
+    print(f"🚀 主程序:   {os.path.join(DIST_DIR, 'X-Ray_AI_Inspector.exe')}")
     print("=" * 65)
 
 

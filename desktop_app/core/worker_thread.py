@@ -76,9 +76,9 @@ class InspectionWorker(QThread):
 
             t_start = time.time()
             try:
-                from bga_pipeline import inspect_bga
+                from xray_pipeline import inspect_xray as inspect_inspection
                 # 调用核心质检函数
-                result = inspect_bga(
+                result = inspect_inspection(
                     input_image_path=img_path,
                     weights_path=self.config.weights_path,
                     mode=self.config.inspection_mode,

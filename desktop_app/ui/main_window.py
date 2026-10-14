@@ -1421,7 +1421,7 @@ class MainWindow(QMainWindow):
         import threading
         def _preload_worker():
             try:
-                from bga_void_seg import get_detector_instance
+                from xray_void_seg import get_detector_instance
                 device, _, _ = hardware_sniffer.resolve_device(self.config.hardware_device)
                 det = get_detector_instance(self.config.weights_path, device=device)
                 import torch

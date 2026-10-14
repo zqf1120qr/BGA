@@ -21,7 +21,7 @@ if not defined PYTHON_EXE if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\pytho
 
 REM 3. Check common Anaconda / Miniconda install locations
 if not defined PYTHON_EXE if exist "D:\Anaconda3\envs\torch\python.exe" set "PYTHON_EXE=D:\Anaconda3\envs\torch\python.exe"
-if not defined PYTHON_EXE if exist "D:\Anaconda3\envs\bga-build\python.exe" set "PYTHON_EXE=D:\Anaconda3\envs\bga-build\python.exe"
+if not defined PYTHON_EXE if exist "D:\Anaconda3\envs\xray-build\python.exe" set "PYTHON_EXE=D:\Anaconda3\envs\xray-build\python.exe"
 if not defined PYTHON_EXE if exist "%USERPROFILE%\anaconda3\envs\torch\python.exe" set "PYTHON_EXE=%USERPROFILE%\anaconda3\envs\torch\python.exe"
 if not defined PYTHON_EXE if exist "%USERPROFILE%\miniconda3\envs\torch\python.exe" set "PYTHON_EXE=%USERPROFILE%\miniconda3\envs\torch\python.exe"
 if not defined PYTHON_EXE if exist "%LOCALAPPDATA%\anaconda3\envs\torch\python.exe" set "PYTHON_EXE=%LOCALAPPDATA%\anaconda3\envs\torch\python.exe"
