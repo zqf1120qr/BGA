@@ -148,7 +148,11 @@ def main():
     # 毫秒级极速创建并呈现主工作站视窗 (无闪屏，系统级光标由原生启动器无缝管理)
     from desktop_app.ui.main_window import MainWindow
     window = MainWindow()
-    window.show()
+    # 🌟 方案 C: 首次默认最大化全屏；若之前记录了窗口状态则智能恢复
+    if getattr(window.config, "window_maximized", True):
+        window.showMaximized()
+    else:
+        window.show()
 
     sys.exit(app.exec())
 

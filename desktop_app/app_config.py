@@ -21,6 +21,10 @@ class InspectionConfig:
     hardware_device: str = "auto"           # "auto" | "0" (GPU) | "cpu"
     overlay_alpha: float = 1.0              # 标注透明度 0.1 ~ 1.0 (默认 100%)
     view_mode: str = "all_outline"          # "all_outline" (全部细轮廓) | "defect_only" (仅高亮缺陷) | "raw_image" (纯原图)
+    # 🌟 窗口尺寸与状态记忆 (方案 C: 首次默认最大化全屏)
+    window_width: int = 1460
+    window_height: int = 920
+    window_maximized: bool = True           # 首次默认全屏最大化
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -62,6 +66,8 @@ class AppConfigManager:
                     for k, v in data.items():
                         if hasattr(self.config, k):
                             setattr(self.config, k, v)
+                # 暂时调整检测方法为全检测 (comprehensive)
+                self.config.inspection_mode = "comprehensive"
             except Exception as e:
                 print(f"[WARN] 读取配置文件失败: {e}")
 
@@ -128,7 +134,8 @@ class AppConfigManager:
             if "undersize_threshold" in params:
                 self.config.undersize_threshold = max(0.01, min(0.90, float(params["undersize_threshold"])))
             if "inspection_mode" in params and params["inspection_mode"] in ("comprehensive", "void", "bridge", "insufficient"):
-                self.config.inspection_mode = str(params["inspection_mode"])
+                # 暂时调整检测方法为全检测 (comprehensive)
+                self.config.inspection_mode = "comprehensive"
             if "overlay_alpha" in params:
                 self.config.overlay_alpha = max(0.1, min(1.0, float(params["overlay_alpha"])))
             if "view_mode" in params:

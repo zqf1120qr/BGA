@@ -243,11 +243,13 @@ class ParamPanel(QFrame):
         """)
 
         self.cb_mode.addItem("全项综合检测 (空洞 + 桥连 + 虚焊)", "comprehensive")
-        self.cb_mode.addItem("仅空洞缺陷检测", "void")
-        self.cb_mode.addItem("仅桥连短路检测", "bridge")
-        self.cb_mode.addItem("仅虚焊少锡检测", "insufficient")
+        # 暂时隐藏其他三个单项检测入口 (按需随时取消注释恢复)
+        # self.cb_mode.addItem("仅空洞缺陷检测", "void")
+        # self.cb_mode.addItem("仅桥连短路检测", "bridge")
+        # self.cb_mode.addItem("仅虚焊少锡检测", "insufficient")
         
-        # 同步配置当前选项
+        # 暂时调整检测方法为全检测，同步配置当前选项
+        self.config.inspection_mode = "comprehensive"
         curr_idx = self.cb_mode.findData(self.config.inspection_mode)
         if curr_idx >= 0:
             self.cb_mode.setCurrentIndex(curr_idx)
@@ -535,6 +537,9 @@ class ParamPanel(QFrame):
         self.spin_insuff.blockSignals(False)
 
         self.cb_mode.blockSignals(True)
+        # 确保模式为全检测
+        if self.config.inspection_mode != "comprehensive":
+            self.config.inspection_mode = "comprehensive"
         idx = self.cb_mode.findData(self.config.inspection_mode)
         if idx >= 0:
             self.cb_mode.setCurrentIndex(idx)

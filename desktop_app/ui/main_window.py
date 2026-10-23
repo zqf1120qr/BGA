@@ -18,7 +18,7 @@ import tempfile
 import cv2
 import numpy as np
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -154,13 +154,20 @@ class CustomTitleBar(QFrame):
         layout.addWidget(self.btn_max)
         layout.addWidget(self.btn_close)
 
+    def update_max_button(self, is_maximized: bool):
+        if is_maximized:
+            self.btn_max.setText("❐")
+            self.btn_max.setToolTip("向下还原")
+        else:
+            self.btn_max.setText("□")
+            self.btn_max.setToolTip("最大化")
+
     def _toggle_maximize(self):
         if self.win.isMaximized():
             self.win.showNormal()
-            self.btn_max.setText("□")
         else:
             self.win.showMaximized()
-            self.btn_max.setText("❐")
+        self.update_max_button(self.win.isMaximized())
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -195,7 +202,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         # 启用无边框现代化原生窗口
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
-        self.resize(1460, 920)
+        self.config = app_config_mgr.config
+        init_w = max(1120, int(getattr(self.config, "window_width", 1460)))
+        init_h = max(720, int(getattr(self.config, "window_height", 920)))
+        self.resize(init_w, init_h)
         self.setMinimumSize(1120, 720)
 
         # 绑定应用与窗口专属图标与标题 (确保任务栏与系统原生显示)
@@ -331,7 +341,25 @@ class MainWindow(QMainWindow):
         self.resizer.attach(self)
         self.resizer.attach(root_container)
 
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if hasattr(self, "custom_titlebar") and self.custom_titlebar:
+                self.custom_titlebar.update_max_button(self.isMaximized())
+        super().changeEvent(event)
+
     def closeEvent(self, event):
+        # 🌟 方案 C: 记忆保存窗口状态与尺寸
+        try:
+            is_max = self.isMaximized()
+            self.config.window_maximized = is_max
+            if not is_max:
+                # 仅在非最大化常规窗口下记录具体长宽，避免全屏分辨率污染常规还原尺寸
+                self.config.window_width = int(self.width())
+                self.config.window_height = int(self.height())
+            app_config_mgr.save()
+        except Exception as e:
+            print(f"[WARN] 记忆保存窗口状态失败: {e}")
+
         if hasattr(self, "resizer") and self.resizer:
             self.resizer.cleanup()
         super().closeEvent(event)
