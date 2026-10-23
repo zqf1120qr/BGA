@@ -4,37 +4,51 @@
 ------------------------------------------------------------------
 为 Windows Frameless 无边框窗口提供 100% 原生级边缘拉伸与对角缩放体验：
 - 支持 8 个方向：上、下、左、右、左上、右上、左下、右下；
-- 鼠标悬停到边缘 6px 内自动切换对应原生系统光标 (SizeHor / SizeVer / SizeDiag)；
+- 鼠标悬停到边缘 6-8px 内自动切换对应原生系统光标 (SizeHor / SizeVer / SizeDiag)；
 - 拖拽平滑缩放，严格遵循最小尺寸限制，最大化时自动禁用。
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 
 class FramelessResizer(QObject):
-    BORDER_WIDTH = 6
+    BORDER_WIDTH = 7
 
     def __init__(self, window: QMainWindow):
         super().__init__()
         self.win = window
         self._resizing = False
-        self._resize_dir = None
+        self._resize_dir: str | None = None
         self._drag_start_pos = QPoint()
         self._drag_start_geo = QRect()
         self._cursor_overridden = False
+        self._installed_app = False
         self._targets: list[QObject] = []
         if hasattr(self.win, "destroyed"):
             self.win.destroyed.connect(self.cleanup)
 
-    def attach(self, target: QObject):
-        """挂载事件监听并记录目标对象"""
-        target.installEventFilter(self)
-        self._targets.append(target)
+    def attach(self, target: QObject | None = None):
+        """挂载全局与目标事件监听"""
+        if target and target not in self._targets:
+            target.installEventFilter(self)
+            self._targets.append(target)
+        app = QApplication.instance()
+        if app and not self._installed_app:
+            app.installEventFilter(self)
+            self._installed_app = True
 
     def cleanup(self):
-        """窗口关闭或析构时安全解绑所有事件过滤器，彻底杜绝内存悬空与非法访问"""
+        """窗口关闭或析构时安全解绑所有事件过滤器"""
+        if self._installed_app:
+            app = QApplication.instance()
+            if app:
+                try:
+                    app.removeEventFilter(self)
+                except Exception:
+                    pass
+            self._installed_app = False
         for t in self._targets:
             try:
                 t.removeEventFilter(self)
@@ -78,8 +92,22 @@ class FramelessResizer(QObject):
         return None
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if self.win.isMaximized():
+        if not self.win or self.win.isMaximized():
+            if self._cursor_overridden:
+                try:
+                    self.win.unsetCursor()
+                except Exception:
+                    pass
+                self._cursor_overridden = False
             return False
+
+        # 如果事件对象是控件但不是主窗口内部控件，跳过
+        if isinstance(obj, QWidget):
+            try:
+                if obj.window() != self.win:
+                    return False
+            except Exception:
+                return False
 
         ev_type = event.type()
 

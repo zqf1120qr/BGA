@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeyEvent, QMouseEvent
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeyEvent, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -187,6 +187,86 @@ class CustomTitleBar(QFrame):
             self._toggle_maximize()
 
 
+class CornerGripWidget(QWidget):
+    """
+    🌟 工业级无边框窗口右下角专用缩放手柄 (Corner Size Grip)
+    ---------------------------------------------------------
+    1. 视觉标识：绘制 3 道精致 45° 科技感防滑斜线纹理，平时深灰 #64748b，悬停/拖拽时高亮青蓝 #38bdf8；
+    2. 鼠标状态：鼠标悬停、划入、拖拽全生命周期锁定为 Qt.CursorShape.SizeFDiagCursor (双向对角箭头 ↘↖)；
+    3. 自由拉伸：鼠标左键按住拖拽即可同步平滑调整主窗口的宽度 (Width) 与高度 (Height)，并受最小限制保护；
+    4. 自动互斥：主窗口最大化时自动消隐，还原窗口时自动显现。
+    """
+    def __init__(self, parent_window: QMainWindow, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.win = parent_window
+        self.setFixedSize(18, 18)
+        self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        self.setToolTip("按住拖拽调整窗口大小 (宽高)")
+        self._dragging = False
+        self._start_global_pos = QPoint()
+        self._start_win_size = QPoint()
+        self._is_hovered = False
+
+    def enterEvent(self, event):
+        self._is_hovered = True
+        self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._is_hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        if self.win.isMaximized():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor("#38bdf8") if (self._is_hovered or self._dragging) else QColor("#64748b")
+        pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+
+        w, h = self.width(), self.height()
+        # 绘制三道平行的对角防滑斜纹 (45度倾斜，贴合右下角)
+        painter.drawLine(w - 3, h - 6, w - 6, h - 3)
+        painter.drawLine(w - 3, h - 10, w - 10, h - 3)
+        painter.drawLine(w - 3, h - 14, w - 14, h - 3)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton and not self.win.isMaximized():
+            self._dragging = True
+            self._start_global_pos = event.globalPosition().toPoint()
+            self._start_win_size = QPoint(self.win.width(), self.win.height())
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            self.grabMouse()
+            self.update()
+            event.accept()
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self._dragging:
+            cur_pos = event.globalPosition().toPoint()
+            dx = cur_pos.x() - self._start_global_pos.x()
+            dy = cur_pos.y() - self._start_global_pos.y()
+
+            min_w = self.win.minimumWidth()
+            min_h = self.win.minimumHeight()
+
+            new_w = max(min_w, self._start_win_size.x() + dx)
+            new_h = max(min_h, self._start_win_size.y() + dy)
+
+            self.win.resize(new_w, new_h)
+            event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging:
+            self._dragging = False
+            self.releaseMouse()
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            self.update()
+            event.accept()
+
+
 def _same_file_path(p1: str, p2: str) -> bool:
     """跨平台规范化路径一致性判定"""
     if not p1 or not p2:
@@ -343,8 +423,11 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
+            is_max = self.isMaximized()
             if hasattr(self, "custom_titlebar") and self.custom_titlebar:
-                self.custom_titlebar.update_max_button(self.isMaximized())
+                self.custom_titlebar.update_max_button(is_max)
+            if hasattr(self, "size_grip") and self.size_grip:
+                self.size_grip.setVisible(not is_max)
         super().changeEvent(event)
 
     def closeEvent(self, event):
@@ -569,7 +652,7 @@ class MainWindow(QMainWindow):
         """)
 
         layout = QHBoxLayout(status_frame)
-        layout.setContentsMargins(10, 3, 10, 3)
+        layout.setContentsMargins(10, 2, 2, 2)
         layout.setSpacing(10)
 
         self.lbl_status_msg = QLabel("系统就绪: 请导入待检图片...")
@@ -592,16 +675,10 @@ class MainWindow(QMainWindow):
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        # 6. 右下角无边框窗体原生缩放角标 (QSizeGrip)
-        self.size_grip = QSizeGrip(status_frame)
-        self.size_grip.setToolTip("拖拽缩放窗口大小")
-        self.size_grip.setStyleSheet("""
-            QSizeGrip {
-                width: 14px;
-                height: 14px;
-                background-color: transparent;
-            }
-        """)
+        # 6. 专属高灵敏右下角缩放手柄 (CornerGripWidget)
+        self.size_grip = CornerGripWidget(self, status_frame)
+        if self.isMaximized():
+            self.size_grip.hide()
         layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
 
         parent_layout.addWidget(status_frame)
