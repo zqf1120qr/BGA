@@ -66,8 +66,6 @@ class AppConfigManager:
                     for k, v in data.items():
                         if hasattr(self.config, k):
                             setattr(self.config, k, v)
-                # 暂时调整检测方法为全检测 (comprehensive)
-                self.config.inspection_mode = "comprehensive"
             except Exception as e:
                 print(f"[WARN] 读取配置文件失败: {e}")
 
@@ -134,8 +132,7 @@ class AppConfigManager:
             if "undersize_threshold" in params:
                 self.config.undersize_threshold = max(0.01, min(0.90, float(params["undersize_threshold"])))
             if "inspection_mode" in params and params["inspection_mode"] in ("comprehensive", "void", "bridge", "insufficient"):
-                # 暂时调整检测方法为全检测 (comprehensive)
-                self.config.inspection_mode = "comprehensive"
+                self.config.inspection_mode = str(params["inspection_mode"])
             if "overlay_alpha" in params:
                 self.config.overlay_alpha = max(0.1, min(1.0, float(params["overlay_alpha"])))
             if "view_mode" in params:
