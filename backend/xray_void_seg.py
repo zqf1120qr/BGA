@@ -58,7 +58,7 @@ SAFE_ZONE_RATIO = 0.84          # (比例) 气泡搜索物理核心安全区。�
 TOPHAT_KERNEL_RATIO = 1.5       # (倍数) 顶帽变换内核比例。
 MIN_TOPHAT_KERNEL = 11          # (像素) 顶帽变换内核的最小绝对尺寸。
 DEFAULT_VOID_THRESH_OFFSET = 7.0 # (亮度值) 默认气泡门槛基准偏移量 (将由图像噪声与直方图自适应动态调谐)。
-MIN_VOID_AREA = 2               # (像素) 最小气泡面积。挽救微小真实微孔。
+MIN_VOID_AREA = 3.8               # (像素) 最小气泡物理面积下限 (对应 r≈1.1px 微孔，精准滤除 1~3px 散斑噪点)。
 MAX_VOID_AREA_RATIO = 0.25      # (比例) 单个气泡连通域占焊球最大面积比例 (防止大面积亮斑误分割)。
 MIN_VOID_SOLIDITY = 0.28        # (比例 0~1) 坚实度门槛。
 MIN_VOID_DENSITY = 0.38         # (比例 0~1) 轮廓内部像素密度 (彻底消除中空环状外包轮廓)。
@@ -124,10 +124,11 @@ def get_detector_instance(weights_path: str, device: str = "0"):
 # ==============================================================
 def circle_nms(circles: List[Circle]) -> List[Circle]:
     """
-    对单个焊球内检出的所有候选气泡圆执行严格抑制：
+    对单个焊球内检出的所有候选气泡圆执行严格且平滑的抑制：
     1. 按半径降序排列；
     2. 彻底消除圈内有圈 (Nesting)：小圆心落在大圆内，或 dist + r_small <= r_large * 1.02 则滤除小圆；
-    3. 彻底消除重叠乱圈 (Heavy Overlap)：两圆圆心相距过近 (dist < r_large * 0.65 或 dist < (r1 + r2) * 0.55) 则滤除较小圆。
+    3. 消除严重重叠乱圈：两圆圆心相距过近 (dist < kr * 0.45 或 dist < (kr + r) * 0.48) 则滤除较小圆，
+       同时允许相切紧邻的双微孔独立共存。
     """
     if not circles:
         return []
@@ -141,17 +142,90 @@ def circle_nms(circles: List[Circle]) -> List[Circle]:
             kcx, kcy = kc["center"]
             kr = kc["radius"]
             dist = math.hypot(cx - kcx, cy - kcy)
-            # 条件 1: 圈内套圈 (小圆几乎完全在大圆内)
-            if dist + r <= kr * 1.02:
+            # 条件 1: 圈内套圈 (小圆心落在大圆内或几乎完全被包容)
+            if dist + r <= kr * 1.02 or dist < kr * 0.45:
                 suppress = True
                 break
-            # 条件 2: 严重重叠 (两圆圆心相距过近或重叠深度过大)
-            if dist < kr * 0.65 or dist < (kr + r) * 0.55:
+            # 条件 2: 严重重叠 (两圆重叠深度过大)
+            if dist < (kr + r) * 0.48:
                 suppress = True
                 break
         if not suppress:
             kept.append(c)
     return kept
+
+
+def decompose_connected_component(
+    cnt: np.ndarray,
+    roi_tophat: np.ndarray,
+    min_split_area: float = 18.0,
+    min_peak_dist: float = 3.5,
+) -> list[np.ndarray]:
+    """
+    对可能粘连的双核/哑铃形连通域执行局部极大值与距离变换分水岭解离：
+    若非凸凹陷连通域内存在两个或以上明确的局部极大值中心，则将其拆分成独立的气泡子连通域，
+    彻底根治“大绿圈吞小黄圈”的欠分割问题。
+    """
+    area = cv2.contourArea(cnt)
+    if area < min_split_area:
+        return [cnt]
+
+    bx, by, bw, bh = cv2.boundingRect(cnt)
+    if bw < 5 or bh < 5:
+        return [cnt]
+
+    local_mask = np.zeros((bh, bw), dtype=np.uint8)
+    local_cnt = cnt - np.array([[[bx, by]]])
+    cv2.drawContours(local_mask, [local_cnt], -1, 255, -1)
+
+    dist = cv2.distanceTransform(local_mask, cv2.DIST_L2, 5)
+    max_dist = float(dist.max())
+    if max_dist < 1.7:
+        return [cnt]
+
+    dilated_dist = cv2.dilate(dist, np.ones((3, 3), np.uint8))
+    is_peak = (dist == dilated_dist) & (dist >= 1.4) & (dist >= 0.40 * max_dist)
+
+    num_peaks, peak_labels, stats, centroids = cv2.connectedComponentsWithStats(is_peak.astype(np.uint8))
+    if num_peaks <= 2:
+        return [cnt]
+
+    valid_centers = []
+    for k in range(1, num_peaks):
+        cx, cy = centroids[k]
+        val = float(dist[int(round(cy)), int(round(cx))])
+        valid_centers.append((cx, cy, val))
+
+    kept_centers = []
+    for c in sorted(valid_centers, key=lambda x: x[2], reverse=True):
+        if not any(math.hypot(c[0] - kc[0], c[1] - kc[1]) < min_peak_dist for kc in kept_centers):
+            kept_centers.append(c)
+
+    if len(kept_centers) < 2:
+        return [cnt]
+
+    markers = np.zeros((bh, bw), dtype=np.int32)
+    for idx, (cx, cy, _) in enumerate(kept_centers, 1):
+        cv2.circle(markers, (int(round(cx)), int(round(cy))), 1, idx, -1)
+
+    dist_norm = cv2.normalize(dist, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    energy = cv2.bitwise_not(dist_norm)
+    energy_bgr = cv2.cvtColor(energy, cv2.COLOR_GRAY2BGR)
+
+    markers = cv2.watershed(energy_bgr, markers)
+
+    sub_contours = []
+    for idx in range(1, len(kept_centers) + 1):
+        sub_mask = ((markers == idx) & (local_mask > 0)).astype(np.uint8)
+        if np.count_nonzero(sub_mask) < 3:
+            continue
+        sub_cnts, _ = cv2.findContours(sub_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for sc in sub_cnts:
+            if cv2.contourArea(sc) >= 3.0:
+                global_sc = sc + np.array([[[bx, by]]])
+                sub_contours.append(global_sc)
+
+    return sub_contours if len(sub_contours) >= 2 else [cnt]
 
 
 # ==============================================================
@@ -376,25 +450,70 @@ def _process_single_solder_ball(
     threshold_val = bg_reference + void_thresh_offset
     _, void_thresh = cv2.threshold(roi_tophat, threshold_val, 255, cv2.THRESH_BINARY) 
 
-    # 微孔保护策略
+    # 微孔保留原始边界，避免无节制闭运算粘连邻孔
     void_mask_raw = cv2.bitwise_and(void_thresh, solder_mask_safe)
-    void_mask_closed = cv2.morphologyEx(void_mask_raw, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
-    void_mask = cv2.bitwise_or(void_mask_raw, void_mask_closed)
+    void_mask_subtle = cv2.morphologyEx(void_mask_raw, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)))
+    void_mask = cv2.bitwise_or(void_mask_raw, void_mask_subtle)
 
     # 坚实度与密度过滤 + 尺度自适应面积约束
     raw_contours, _ = cv2.findContours(void_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # 🌟 针对性改进 1：仅对呈现凹陷/哑铃/狭长的连通域进行多峰分水岭解离 (避免大圆吞小圆)
+    decomposed_contours = []
+    for cnt in raw_contours:
+        c_area = cv2.contourArea(cnt)
+        hull_area = cv2.contourArea(cv2.convexHull(cnt))
+        solidity = (c_area / float(hull_area)) if hull_area > 0 else 1.0
+        rect = cv2.minAreaRect(cnt)
+        rw, rh = rect[1]
+        aspect = (max(rw, rh) / max(min(rw, rh), 1e-3)) if (rw > 0 and rh > 0) else 1.0
+        
+        # 仅当面积较大且明显呈现双核/哑铃/非凸凹陷 (solidity < 0.88 或 aspect >= 1.30) 时解离
+        if c_area >= 18.0 and (solidity < 0.88 or aspect >= 1.30):
+            subs = decompose_connected_component(cnt, roi_tophat, min_split_area=18.0, min_peak_dist=3.5)
+            decomposed_contours.extend(subs)
+        else:
+            decomposed_contours.append(cnt)
+
     candidate_void_circles: List[Circle] = []
     max_allowed_area = MAX_VOID_AREA_RATIO * np.pi * radius * radius
+    adaptive_min_area = max(float(min_void_area), float(min_void_area) * ((radius / 15.0) ** 1.1) * 0.8)
 
-    adaptive_min_area = max(float(min_void_area), float(min_void_area) * ((radius / 15.0) ** 1.2) * 0.7)
-
-    for cnt in raw_contours:
+    for cnt in decomposed_contours:
         c_area = cv2.contourArea(cnt)
         if c_area < adaptive_min_area or c_area > max_allowed_area:
             continue
 
         single_mask = np.zeros_like(void_mask)
         cv2.drawContours(single_mask, [cnt], -1, 255, thickness=-1)
+
+        tophat_vals = roi_tophat[single_mask > 0]
+        if len(tophat_vals) == 0:
+            continue
+        peak_tophat = float(np.max(tophat_vals))
+        peak_contrast = peak_tophat - bg_reference
+
+        (v_x, v_y), v_radius = cv2.minEnclosingCircle(cnt)
+        r_area = np.sqrt(c_area / np.pi)
+        d_to_center = np.hypot(v_x - local_cx, v_y - local_cy)
+
+        # 🌟 规则 A: 微小目标 (c_area < 8.0 或 r_area < 1.6) 严格要求峰值对比度 (杜绝底噪轻微起伏)
+        if c_area < 8.0 or r_area < 1.6:
+            if peak_contrast < (void_thresh_offset + 4.0):
+                continue
+
+        # 🌟 规则 B: 靠近焊球边缘区域 (d_to_center > radius * 0.70) 严格防范边缘厚度渐变毛刺
+        if d_to_center > radius * 0.70:
+            if c_area < 10.0 and peak_contrast < (void_thresh_offset + 4.8):
+                continue
+            # 边缘处过于扁平细长 (可能是圆弧贴边毛刺) 的过滤
+            rect = cv2.minAreaRect(cnt)
+            rw, rh = rect[1]
+            if rw > 0 and rh > 0:
+                aspect = max(rw, rh) / min(rw, rh)
+                if aspect > 2.8:
+                    continue
+
         actual_pixels = np.count_nonzero(cv2.bitwise_and(void_mask, single_mask))
         filled_area = np.count_nonzero(single_mask)
         if filled_area > 0 and (actual_pixels / filled_area) < MIN_VOID_DENSITY:
@@ -404,12 +523,8 @@ def _process_single_solder_ball(
         if hull_area > 0 and (c_area / float(hull_area)) < MIN_VOID_SOLIDITY:
             continue
 
-        (v_x, v_y), v_radius = cv2.minEnclosingCircle(cnt)
-        r_area = np.sqrt(c_area / np.pi)
+        v_r_calc = min(v_radius * 0.98, r_area * 1.12, radius * MAX_VOID_RADIUS_RATIO, MAX_VOID_RADIUS_ABSOLUTE)
 
-        v_r_calc = min(v_radius * VOID_RADIUS_COMP, r_area * 1.35, radius * MAX_VOID_RADIUS_RATIO, MAX_VOID_RADIUS_ABSOLUTE)
-
-        d_to_center = np.hypot(v_x - local_cx, v_y - local_cy)
         if d_to_center >= radius * SAFE_ZONE_RATIO:
             continue
 
