@@ -37,18 +37,70 @@ if hasattr(sys.stdout, 'reconfigure'):
 # 确保能直接导入本地模块与上级 backend 模块
 HERE = Path(__file__).resolve().parent           # backend/utils
 BACKEND_DIR = HERE.parent                        # backend
-PROJECT_ROOT = BACKEND_DIR.parent                # 项目根目录 (即 ./)
+PROJECT_ROOT = BACKEND_DIR.parent                # 项目根目录 (即 BGA)
 
-for p in (str(BACKEND_DIR), str(HERE), str(PROJECT_ROOT)):
+for p in (str(BACKEND_DIR), str(HERE), str(PROJECT_ROOT), str(PROJECT_ROOT.parent)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import bga_void_seg
+try:
+    import xray_void_seg as void_seg_module
+except ImportError:
+    try:
+        from backend import xray_void_seg as void_seg_module
+    except ImportError:
+        try:
+            import bga_void_seg as void_seg_module
+        except ImportError:
+            from backend import bga_void_seg as void_seg_module
 
-# 默认路径定义 (数据文件夹 data 位于项目根目录，模型权重与输出目录位于 backend)
-DEFAULT_IMG_DIR = PROJECT_ROOT / "data" / "imgs" if (PROJECT_ROOT / "data" / "imgs").exists() else (PROJECT_ROOT / "data" / "new-img")
-DEFAULT_COORD_DIR = PROJECT_ROOT / "data" / "coord" if (PROJECT_ROOT / "data" / "coord").exists() else (PROJECT_ROOT / "data" / "new-coord")
-DEFAULT_WEIGHTS = BACKEND_DIR / "best.pt" if (BACKEND_DIR / "best.pt").exists() else (PROJECT_ROOT / "best.pt")
+def _first_existing(candidates: Sequence[Path], fallback: Path) -> Path:
+    for c in candidates:
+        if c.exists():
+            return c
+    return fallback
+
+def _detect_default_device() -> str:
+    try:
+        import torch
+        return "0" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+# 默认路径定义 (自动兼容项目不同运行工作路径)
+DEFAULT_IMG_DIR = _first_existing(
+    [
+        PROJECT_ROOT / "data" / "imgs",
+        PROJECT_ROOT / "data" / "new-img",
+        PROJECT_ROOT.parent / "BGA" / "data" / "imgs",
+        Path.cwd() / "data" / "imgs",
+        Path.cwd() / "BGA" / "data" / "imgs",
+    ],
+    fallback=PROJECT_ROOT / "data" / "imgs",
+)
+
+DEFAULT_COORD_DIR = _first_existing(
+    [
+        PROJECT_ROOT / "data" / "coord",
+        PROJECT_ROOT / "data" / "new-coord",
+        PROJECT_ROOT.parent / "BGA" / "data" / "coord",
+        Path.cwd() / "data" / "coord",
+        Path.cwd() / "BGA" / "data" / "coord",
+    ],
+    fallback=PROJECT_ROOT / "data" / "coord",
+)
+
+DEFAULT_WEIGHTS = _first_existing(
+    [
+        BACKEND_DIR / "best.pt",
+        PROJECT_ROOT / "best.pt",
+        PROJECT_ROOT.parent / "BGA" / "backend" / "best.pt",
+        Path.cwd() / "backend" / "best.pt",
+        Path.cwd() / "BGA" / "backend" / "best.pt",
+    ],
+    fallback=BACKEND_DIR / "best.pt",
+)
+
 DEFAULT_OUTPUT_DIR = BACKEND_DIR / "output" / "void_eval_results"
 
 IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"]
@@ -523,8 +575,8 @@ def main():
     parser.add_argument("--coord-dir", default=str(DEFAULT_COORD_DIR), help="标注 JSON 目录路径 (默认: data/coord)")
     parser.add_argument("--weights", default=str(DEFAULT_WEIGHTS), help="模型权重文件路径 (默认: backend/best.pt)")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT_DIR), help="评估结果输出目录 (默认: backend/output/void_eval_results)")
-    parser.add_argument("--device", default="cpu", help="推理设备 (cpu, 0 等)")
-    parser.add_argument("--conf", type=float, default=0.25, help="焊点置信度阈值 (默认: 0.25)")
+    parser.add_argument("--device", default=_detect_default_device(), help=f"推理设备 (默认自动探测: {_detect_default_device()})")
+    parser.add_argument("--conf", type=float, default=0.25, help="焊点置信度阈值 (默认: 0.25, <=0 表示不设门槛完全由网格优化精选)")
     parser.add_argument("--hole-label", default="hole", help="孔洞标签名称 (默认: hole)")
     parser.add_argument("--solder-label", default="solder ball", help="焊球标签名称 (默认: solder ball)")
     parser.add_argument("--gt-hole-scope", choices=["inside_solder_ball", "all"], default="inside_solder_ball", help="GT 评估范围")
@@ -587,6 +639,8 @@ def main():
     ng_correct = 0
     ng_total = 0
     total_matched_solders_for_rate = 0
+    board_total = 0
+    board_correct = 0
 
     t_start = time.perf_counter()
 
@@ -615,12 +669,13 @@ def main():
         )
         gt_eval = inside_holes if args.gt_hole_scope == "inside_solder_ball" else holes_all
 
-        # 调用本地高召回自适应算法
+        # 调用当前系统气泡分割流水线
         t0 = time.perf_counter()
-        raw_results = bga_void_seg.predict_and_generate_mask(
-            str(weights),
-            str(ip),
-            float(args.conf),
+        conf_val = None if (args.conf is not None and args.conf <= 0) else float(args.conf)
+        raw_results = void_seg_module.predict_and_generate_mask(
+            model=str(weights),
+            input_image_path=str(ip),
+            conf_threshold=conf_val,
             device=str(args.device),
             save_debug_image=bool(args.save_collaborator_debug),
             debug_output_dir=str(output / "collaborator_debug"),
@@ -692,15 +747,17 @@ def main():
         f1 = f1_area
         accuracy = accuracy_area
 
-        # void_rate 比较
+        # void_rate 比较与单球/整板 NG 判定
         solder_matches, unmatched_gt_solders, unmatched_pred_solders = match_solders_for_rate(gt_solders, pred_solders)
         image_rate_errors = []
         image_ng_correct = 0
+        image_gt_rates = []
         for sm in solder_matches:
             gi, pi = sm["gt_index"], sm["pred_index"]
             gt_s = gt_solders[gi]
             assigned = [hh for hh in inside_holes if hh.parent_index == gi]
             gt_rate = gt_void_rate_for_solder((h, w), gt_s, assigned)
+            image_gt_rates.append(gt_rate)
             pred_rate = float(pred_solders[pi].void_rate)
             ae = abs(gt_rate - pred_rate)
             rate_abs_errors.append(ae)
@@ -713,6 +770,13 @@ def main():
             ng_correct += ok
             image_ng_correct += ok
             ng_total += 1
+
+        gt_board_ng = any(r > args.ng_threshold for r in image_gt_rates) if image_gt_rates else False
+        pred_board_ng = any(float(ps.void_rate) > args.ng_threshold for ps in pred_solders) if pred_solders else False
+        board_status_match = bool(gt_board_ng == pred_board_ng)
+        board_total += 1
+        if board_status_match:
+            board_correct += 1
 
         metrics = {
             "image": ip.name,
@@ -750,6 +814,9 @@ def main():
             "matched_solder_for_rate": len(solder_matches),
             "void_rate_mae": float(np.mean(image_rate_errors)) if image_rate_errors else None,
             "ng_accuracy": safe_div(image_ng_correct, len(solder_matches)) if solder_matches else None,
+            "gt_board_status": "NG" if gt_board_ng else "PASS",
+            "pred_board_status": "NG" if pred_board_ng else "PASS",
+            "board_status_match": board_status_match,
             "infer_eval_seconds": infer_s,
         }
 
@@ -788,13 +855,14 @@ def main():
             json.dump(detail, f, ensure_ascii=False, indent=2)
 
         rows.append(metrics)
+        board_str = f"GT板={metrics['gt_board_status']} 测板={metrics['pred_board_status']}"
         print(
             f"[{idx:2d}/{len(pairs):2d}] {ip.name:<8} | "
-            f"GT-hole={len(gt_eval):3d} Pred-hole={len(pred_holes):3d} | "
+            f"球数 GT/Pred={len(gt_solders):3d}/{len(pred_solders):3d} | "
+            f"孔数 GT/Pred={len(gt_eval):3d}/{len(pred_holes):3d} | "
             f"TP={tp_count:3d} FP={fp_count:3d} FN={fn_count:3d} | "
-            f"面积Recall={recall_area*100:5.1f}% (数量={recall_count*100:5.1f}%) "
-            f"面积P={precision_area*100:5.1f}% (数量={precision_count*100:5.1f}%) | "
-            f"耗时={infer_s:.2f}s"
+            f"面积Recall={recall_area*100:5.1f}% 面积P={precision_area*100:5.1f}% | "
+            f"{board_str} | 耗时={infer_s:.2f}s"
         )
 
     micro_p_count = safe_div(totals["tp"], totals["tp"] + totals["fp"])
@@ -849,6 +917,9 @@ def main():
         "matched_solder_for_rate": total_matched_solders_for_rate,
         "void_rate_mae": float(np.mean(rate_abs_errors)) if rate_abs_errors else "",
         "ng_accuracy": safe_div(ng_correct, ng_total) if ng_total else "",
+        "gt_board_status": "-",
+        "pred_board_status": "-",
+        "board_status_match": f"{board_correct}/{board_total}",
         "infer_eval_seconds": sum(float(r.get("infer_eval_seconds", 0)) for r in rows),
     }
 
@@ -863,9 +934,13 @@ def main():
         "accuracy_area", "accuracy_count",
         "mask_iou", "mask_dice", "gt_area_px", "pred_area_px", "inter_area_px",
         "mean_match_center_error_px", "mean_match_circle_iou",
-        "matched_solder_for_rate", "void_rate_mae", "ng_accuracy", "infer_eval_seconds",
+        "matched_solder_for_rate", "void_rate_mae", "ng_accuracy",
+        "gt_board_status", "pred_board_status", "board_status_match",
+        "infer_eval_seconds",
     ]
     write_csv(output / "metrics.csv", rows + [summary_row], fields)
+
+    board_ng_acc = safe_div(board_correct, board_total) if board_total else 0.0
 
     summary = {
         "images": len(rows),
@@ -899,7 +974,8 @@ def main():
         "mean_matched_circle_iou": float(np.mean(matched_circle_ious)) if matched_circle_ious else None,
         "matched_solders_for_void_rate": total_matched_solders_for_rate,
         "void_rate_mae": float(np.mean(rate_abs_errors)) if rate_abs_errors else None,
-        "ng_accuracy": safe_div(ng_correct, ng_total) if ng_total else None,
+        "solder_ng_accuracy": safe_div(ng_correct, ng_total) if ng_total else None,
+        "board_ng_accuracy": board_ng_acc,
         "elapsed_seconds": time.perf_counter() - t_start,
     }
     try:
@@ -925,8 +1001,9 @@ def main():
     print(f"全局 Mask IoU        : {global_mask_iou * 100:.2f}%")
     if summary["void_rate_mae"] is not None:
         print(f"孔洞率绝对误差 (MAE) : {summary['void_rate_mae'] * 100:.2f}%")
-    if summary["ng_accuracy"] is not None:
-        print(f"NG 判定准确率        : {summary['ng_accuracy'] * 100:.2f}%")
+    if summary["solder_ng_accuracy"] is not None:
+        print(f"单焊球 NG 判定准确率 : {summary['solder_ng_accuracy'] * 100:.2f}%")
+    print(f"整板质检 NG 判定准度 : {board_ng_acc * 100:.2f}% ({board_correct}/{board_total})")
     print("-" * 60)
     print(f"报表 CSV             : {output / 'metrics.csv'}")
     print(f"结果 JSON            : {output / 'summary.json'}")
