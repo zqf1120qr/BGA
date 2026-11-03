@@ -108,16 +108,24 @@ GRID_REFINE_CFG = GridNodeRefineConfig(
     remove_blank_on_grid=True,
 )
 
+import threading
+
 # ==============================================================
-# ================= 🌟 [全局模型缓存] ===========================
+# ================= [全局模型缓存与线程安全池] =================
 # ==============================================================
+_detector_lock = threading.Lock()
 _detector_cache = {}
 
 def get_detector_instance(weights_path: str, device: str = "0"):
-    """加载并缓存检测器"""
-    if weights_path not in _detector_cache:
-        _detector_cache[weights_path] = BGADetector(weights=weights_path, device=device)
-    return _detector_cache[weights_path]
+    """
+    加载并缓存检测器 (线程安全单例池)
+    缓存键使用 (weights_path, device)，确保切换计算设备时能正确构建对应实例
+    """
+    cache_key = (os.path.abspath(weights_path), str(device).strip())
+    with _detector_lock:
+        if cache_key not in _detector_cache:
+            _detector_cache[cache_key] = BGADetector(weights=weights_path, device=device)
+        return _detector_cache[cache_key]
 
 # ==============================================================
 # ================= 🌟 [圆形 NMS 与嵌套抑制算法] ===================
@@ -561,7 +569,9 @@ def _process_single_solder_ball(
         "solder_circle": {"center": (float(x_c), float(y_c)), "radius": float(radius)},
         "void_circle": current_void_circles,
         "void_rate": void_rate,
-        "confidence": conf
+        "confidence": conf,
+        "grid_row": data.get("grid_row"),
+        "grid_col": data.get("grid_col"),
     }
 
 

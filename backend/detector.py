@@ -500,6 +500,9 @@ def result_to_objects(result_item: ResultDict, lowercase_keys: bool = True, incl
             obj["via_center_score"] = p.get("ViaCenterScore", p.get("ViaCenterScoreF"))
             obj["radius_ratio"] = p.get("RadiusRatio")
             obj["avg_radius_ref"] = result_item.get("avg_radius", 0.0)
+            obj["grid_row"] = p.get("GridRow")
+            obj["grid_col"] = p.get("GridCol")
+            obj["grid_id"] = p.get("GridId")
         objects.append(obj)
     return objects
 

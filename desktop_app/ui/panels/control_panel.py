@@ -215,6 +215,29 @@ class ControlActionPanel(QFrame):
         self.btn_open_dir.setEnabled(not running)
         self.btn_crop.setEnabled(not running)
 
+    def set_dirty_state(self, dirty: bool):
+        """设置算法模型参数变更后的待重新检测状态 (脏状态反馈)"""
+        if dirty:
+            self.btn_start.setText("重新执行质检 (参数已修改)")
+            self.btn_start.setStyleSheet("""
+                QPushButton#BtnPrimary {
+                    background-color: #b45309;
+                    border: 1px solid #f59e0b;
+                    color: #ffffff;
+                    font-weight: bold;
+                    border-radius: 6px;
+                }
+                QPushButton#BtnPrimary:hover {
+                    background-color: #92400e;
+                    border-color: #fbbf24;
+                }
+            """)
+            self.btn_start.setToolTip("质检模式或置信度已修改，当前视口显示的是历史结果，请点击重新执行质检")
+        else:
+            self.btn_start.setText("开始执行质检任务")
+            self.btn_start.setStyleSheet("")
+            self.btn_start.setToolTip("")
+
     def _select_image_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,

@@ -505,6 +505,7 @@ class ImageCanvasView(QGraphicsView):
             is_bridge=record.is_bridge,
             is_reviewed=is_rev,
             review_reason=rev_reason,
+            pin_name=getattr(record, "pin_name", ""),
         )
         self.hover_hud.show_above_ball(center_view, radius_view, self.viewport().size())
 

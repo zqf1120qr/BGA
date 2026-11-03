@@ -171,6 +171,15 @@ class CustomTitleBar(QFrame):
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.ReleaseCapture()
+                    ctypes.windll.user32.SendMessageW(int(self.win.winId()), 0x0112, 0xF012, 0)
+                    event.accept()
+                    return
+                except Exception:
+                    pass
             self.drag_start_pos = event.globalPosition().toPoint() - self.win.frameGeometry().topLeft()
             event.accept()
 
@@ -429,6 +438,14 @@ class MainWindow(QMainWindow):
             if hasattr(self, "size_grip") and self.size_grip:
                 self.size_grip.setVisible(not is_max)
         super().changeEvent(event)
+
+    def nativeEvent(self, eventType, message):
+        if hasattr(self, "resizer") and self.resizer:
+            max_btn = getattr(self.custom_titlebar, "btn_max", None) if hasattr(self, "custom_titlebar") else None
+            handled, result = self.resizer.handle_native_event(eventType, message, max_btn=max_btn)
+            if handled:
+                return True, result
+        return super().nativeEvent(eventType, message)
 
     def closeEvent(self, event):
         # 🌟 方案 C: 记忆保存窗口状态与尺寸
@@ -746,9 +763,7 @@ class MainWindow(QMainWindow):
         # 参数面板动态重算与硬件联动
         self.panel_param.sig_threshold_changed.connect(self._handle_threshold_changed)
         self.panel_param.sig_alpha_synced.connect(self._sync_alpha_from_config)
-        self.panel_param.sig_config_changed.connect(
-            lambda: self._handle_threshold_changed(self.config.ng_void_threshold, self.config.undersize_threshold)
-        )
+        self.panel_param.sig_config_changed.connect(self._handle_model_config_changed)
         self.panel_param.sig_hardware_updated.connect(self._on_hardware_updated)
         self.panel_param._refresh_hardware_status()
 
@@ -812,6 +827,7 @@ class MainWindow(QMainWindow):
         self.session = InspectionSession()
         self.panel_result.update_summary(self.session.get_summary_stats())
         self.panel_defect_table.load_data([])
+        self.panel_control.set_dirty_state(False)
         self.lbl_status_msg.setText(f"已加载单张图片: {os.path.basename(file_path)} ({w} x {h} px)")
 
     def load_folder(self, folder_path: str):
@@ -1011,6 +1027,7 @@ class MainWindow(QMainWindow):
             queue = [target_path]
 
         self.panel_control.set_running_state(True)
+        self.panel_control.set_dirty_state(False)
         self.progress_bar.show()
         self.progress_bar.setRange(0, len(queue))
         self.progress_bar.setValue(0)
@@ -1222,6 +1239,14 @@ class MainWindow(QMainWindow):
                     tmp.re_evaluate(ng_void_thresh, undersize_thresh)
 
                 self.thumbnail_bar.set_item_status(idx, tmp.board_status)
+
+    def _handle_model_config_changed(self):
+        """当模型置信度或检测模式发生修改时触发 (脏状态管理)"""
+        if self.session.solder_records:
+            self.panel_control.set_dirty_state(True)
+            self.lbl_status_msg.setText("[提示] 质检模式或置信度已修改，当前显示为历史结果，请点击【重新执行质检】生效")
+        else:
+            self._handle_threshold_changed(self.config.ng_void_threshold, self.config.undersize_threshold)
 
     def _on_view_mode_changed(self, mode: str):
         self.config.view_mode = mode

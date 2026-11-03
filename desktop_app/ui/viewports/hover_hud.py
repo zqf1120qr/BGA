@@ -100,8 +100,10 @@ class HoverHudWidget(QFrame):
         is_bridge: bool,
         is_reviewed: bool = False,
         review_reason: str = "",
+        pin_name: str = "",
     ):
-        self.lbl_title.setText(f"#{index} 号焊球")
+        display_title = f"引脚 {pin_name} (#{index})" if pin_name else f"#{index} 号焊球"
+        self.lbl_title.setText(display_title)
 
         # 状态 Badge 颜色
         if is_reviewed:
@@ -164,7 +166,10 @@ class HoverHudWidget(QFrame):
         else:
             self.lbl_bridge.setText(f"• 桥连短路: <span style='color:{DefectColors.NORMAL_HEX}'>正常</span>")
 
-        self.lbl_coord.setText(f"• 中心坐标: ({cx:.1f}, {cy:.1f})")
+        coord_text = f"• 中心坐标: ({cx:.1f}, {cy:.1f})"
+        if pin_name:
+            coord_text = f"• 位号: {pin_name} | 坐标: ({cx:.1f}, {cy:.1f})"
+        self.lbl_coord.setText(coord_text)
         self.adjustSize()
 
 

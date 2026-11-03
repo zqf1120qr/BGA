@@ -51,22 +51,22 @@ class InspectionWorker(QThread):
     def cancel(self):
         """外部请求取消当前任务队列"""
         self._is_cancelled = True
-        self.sig_log.emit("🛑 正在停止质检队列...")
+        self.sig_log.emit("[ABORT] 正在停止质检队列...")
 
     def run(self):
         total = len(self.image_paths)
         if total == 0:
-            self.sig_log.emit("⚠️ 待检测图片列表为空")
+            self.sig_log.emit("[WARN] 待检测图片列表为空")
             return
 
         # 1. 硬件自适应解析
         target_device, status_text, _ = hardware_sniffer.resolve_device(self.config.hardware_device)
-        self.sig_log.emit(f"⚙️ 运算引擎激活: {status_text}")
+        self.sig_log.emit(f"[INFO] 运算引擎激活: {status_text}")
 
         results_list = []
         for idx, img_path in enumerate(self.image_paths, start=1):
             if self._is_cancelled:
-                self.sig_log.emit("🛑 任务已被用户手动终止")
+                self.sig_log.emit("[ABORT] 任务已被用户手动终止")
                 break
 
             fname = os.path.basename(img_path)
@@ -95,11 +95,23 @@ class InspectionWorker(QThread):
 
                 results_list.append(result)
                 self.sig_single_finished.emit(result)
-                self.sig_log.emit(f"✅ {fname} 完成: {result.get('board_status')} (耗时 {elapsed_ms:.1f}ms)")
+                self.sig_log.emit(f"[OK] {fname} 完成: {result.get('board_status')} (耗时 {elapsed_ms:.1f}ms)")
+
+                # GPU 显存治理与防 OOM 机制 (周期性清理 CUDA 缓存与执行垃圾回收)
+                if str(target_device).lower() != "cpu":
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                if idx % 10 == 0:
+                    import gc
+                    gc.collect()
 
             except Exception as e:
                 err_msg = str(e)
                 self.sig_error.emit(fname, err_msg)
-                self.sig_log.emit(f"❌ {fname} 质检失败: {err_msg}")
+                self.sig_log.emit(f"[ERROR] {fname} 质检失败: {err_msg}")
 
         self.sig_batch_finished.emit(results_list)

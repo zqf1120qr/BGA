@@ -762,7 +762,7 @@ def _build_single_item_flowables(
 
     if defect_records or extra_reviewed_bridges:
         defect_data = [
-            [_th_w("序号"), _th_w("中心坐标(X, Y)"), _th_w("空洞占比"), _th_w("少锡缩减"), _th_w("桥连短路"), _th_w("初始原因"), _th_w("最终结论")]
+            [_th_w("引脚位号"), _th_w("中心坐标(X, Y)"), _th_w("空洞占比"), _th_w("少锡缩减"), _th_w("桥连短路"), _th_w("初始原因"), _th_w("最终结论")]
         ]
         max_show = 150
         records_to_show = defect_records[:max_show]
@@ -797,8 +797,9 @@ def _build_single_item_flowables(
             else:
                 reason_str = "异常 (已复核)" if is_cleared else "异常"
 
+            pin_str = f"{r.pin_name} (#{r.index})" if getattr(r, 'pin_name', '') and r.pin_name != f"#{r.index}" else f"#{r.index}"
             defect_data.append([
-                f"#{r.index}",
+                pin_str,
                 f"({rcx:.1f}, {rcy:.1f})",
                 f"{r_void * 100:.1f}%",
                 f"-{r_reduct:.1f}%" if r_reduct > 0 else "0.0%",
@@ -822,7 +823,7 @@ def _build_single_item_flowables(
 
         t_defect = Table(
             defect_data,
-            colWidths=[1.6 * cm, 2.8 * cm, 2.2 * cm, 2.2 * cm, 2.2 * cm, 4.0 * cm, 3.0 * cm],
+            colWidths=[2.0 * cm, 2.6 * cm, 2.1 * cm, 2.1 * cm, 2.1 * cm, 4.1 * cm, 3.0 * cm],
             repeatRows=1,
         )
         t_defect_style = [

@@ -1,16 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-🌟 无边框原生窗口 8 向平滑缩放手柄与边缘捕获器 (Frameless Resizer)
+无边框原生窗口 8 向平滑缩放与 Windows 原生生态融合器 (Frameless Resizer)
 ------------------------------------------------------------------
-为 Windows Frameless 无边框窗口提供 100% 原生级边缘拉伸与对角缩放体验：
+为 Windows Frameless 无边框窗口提供原生级边缘拉伸与对角缩放体验：
 - 支持 8 个方向：上、下、左、右、左上、右上、左下、右下；
-- 鼠标悬停到边缘 6-8px 内自动切换对应原生系统光标 (SizeHor / SizeVer / SizeDiag)；
-- 拖拽平滑缩放，严格遵循最小尺寸限制，最大化时自动禁用。
+- 支持 Windows 11 Snap Layouts 贴靠菜单 (HTMAXBUTTON) 与 Win+方向键原生分屏；
+- 在 Windows 下优先使用原生 WM_NCHITTEST 消息分流，避免全局 QApplication 性能损耗。
 """
 from __future__ import annotations
 
+import sys
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class MSG(ctypes.Structure):
+        _fields_ = [
+            ("hwnd", wintypes.HWND),
+            ("message", wintypes.UINT),
+            ("wParam", wintypes.WPARAM),
+            ("lParam", wintypes.LPARAM),
+            ("time", wintypes.DWORD),
+            ("pt", wintypes.POINT),
+        ]
 
 
 class FramelessResizer(QObject):
@@ -30,14 +45,67 @@ class FramelessResizer(QObject):
             self.win.destroyed.connect(self.cleanup)
 
     def attach(self, target: QObject | None = None):
-        """挂载全局与目标事件监听"""
+        """挂载目标事件监听 (仅在非 Windows 或局部组件中挂载)"""
         if target and target not in self._targets:
             target.installEventFilter(self)
             self._targets.append(target)
-        app = QApplication.instance()
-        if app and not self._installed_app:
-            app.installEventFilter(self)
-            self._installed_app = True
+
+    def handle_native_event(self, eventType, message, max_btn: QWidget | None = None) -> tuple[bool, int]:
+        """处理 Windows 原生消息 (WM_NCHITTEST)，无缝对接 Windows 11 Snap 布局"""
+        if sys.platform != "win32":
+            return False, 0
+        if eventType not in (b"windows_generic_MSG", "windows_generic_MSG"):
+            return False, 0
+
+        try:
+            msg = MSG.from_address(int(message))
+            if msg.message == 0x0084:  # WM_NCHITTEST
+                x = ctypes.c_short(msg.lParam & 0xFFFF).value
+                y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+
+                # 优先检测最大化按钮 (激活 Windows 11 Snap Layouts 贴靠菜单)
+                if max_btn and max_btn.isVisible():
+                    top_left = max_btn.mapToGlobal(QPoint(0, 0))
+                    bw = max_btn.width()
+                    bh = max_btn.height()
+                    if (top_left.x() <= x <= top_left.x() + bw) and (top_left.y() <= y <= top_left.y() + bh):
+                        return True, 9  # HTMAXBUTTON
+
+                if self.win.isMaximized():
+                    return False, 0
+
+                win_geo = self.win.geometry()
+                wx = win_geo.x()
+                wy = win_geo.y()
+                ww = win_geo.width()
+                wh = win_geo.height()
+                b = self.BORDER_WIDTH
+
+                on_left = (wx <= x <= wx + b)
+                on_right = (wx + ww - b <= x <= wx + ww)
+                on_top = (wy <= y <= wy + b)
+                on_bottom = (wy + wh - b <= y <= wy + wh)
+
+                if on_left and on_top:
+                    return True, 13  # HTTOPLEFT
+                if on_right and on_top:
+                    return True, 14  # HTTOPRIGHT
+                if on_left and on_bottom:
+                    return True, 16  # HTBOTTOMLEFT
+                if on_right and on_bottom:
+                    return True, 17  # HTBOTTOMRIGHT
+                if on_left:
+                    return True, 10  # HTLEFT
+                if on_right:
+                    return True, 11  # HTRIGHT
+                if on_top:
+                    return True, 12  # HTTOP
+                if on_bottom:
+                    return True, 15  # HTBOTTOM
+        except Exception:
+            pass
+
+        return False, 0
 
     def cleanup(self):
         """窗口关闭或析构时安全解绑所有事件过滤器"""
@@ -101,7 +169,6 @@ class FramelessResizer(QObject):
                 self._cursor_overridden = False
             return False
 
-        # 如果事件对象是控件但不是主窗口内部控件，跳过
         if isinstance(obj, QWidget):
             try:
                 if obj.window() != self.win:

@@ -210,5 +210,5 @@ def build_optimized_xray_template(output_path: str):
 
 
 if __name__ == "__main__":
-    target = os.path.abspath("docs/X 射线检测报告.docx")
+    target = os.path.abspath("docs/X射线检测报告.docx")
     build_optimized_xray_template(target)

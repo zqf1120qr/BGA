@@ -77,7 +77,7 @@ class DefectTablePanel(QFrame):
         # 2. 表格组件 (支持高对比深金黄底色与亮金黄色文字选中联动)
         self.table = QTableWidget()
         headers = [
-            ("焊点ID", "焊点编号 (单击视口定位，双击平滑居中放大聚焦)"),
+            ("引脚位号", "BGA 阵列标准工业引脚位号 (单击视口定位，双击平滑居中放大聚焦)"),
             ("空洞占比", "焊球内部空洞面积占焊球总面积的比例"),
             ("少锡幅度", "相对标准焊球的面积缩减率 (虚焊少锡指标)"),
             ("桥连短路", "相邻焊球锡膏粘连短路状态与关联焊点"),
@@ -94,7 +94,7 @@ class DefectTablePanel(QFrame):
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
-        self.table.setColumnWidth(0, 42)   # 焊点ID (#xxx)
+        self.table.setColumnWidth(0, 56)   # 引脚位号 (如 A1, B12)
         self.table.setColumnWidth(1, 52)   # 空洞占比 (xx.x%)
         self.table.setColumnWidth(2, 52)   # 少锡幅度 (-xx.x%)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 桥连短路 (自适应伸展占满剩余宽度)
@@ -165,12 +165,14 @@ class DefectTablePanel(QFrame):
             is_reviewed_pass = (rec.is_manually_reviewed and rec.manual_status == "PASS")
             is_any_reviewed = is_reviewed_pass or (rec.is_bridge_cleared and not rec.final_is_ng)
 
-            # 1. 焊点ID
-            item_id = QTableWidgetItem(f"#{rec.index}")
+            # 1. 焊点引脚位号
+            pin_label = getattr(rec, 'pin_name', '') or f"#{rec.index}"
+            item_id = QTableWidgetItem(pin_label)
             item_id.setData(Qt.ItemDataRole.UserRole, rec.index)
             item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item_id.setToolTip(
-                f"[ 焊球 #{rec.index} 几何明细 ]\n"
+                f"[ BGA 引脚位号: {pin_label} (#{rec.index}) ]\n"
+                f"• 行列坐标: 行 {getattr(rec, 'grid_row', '--')} / 列 {getattr(rec, 'grid_col', '--')}\n"
                 f"• 中心坐标: ({int(rec.cx)}, {int(rec.cy)})\n"
                 f"• 像素半径: {rec.radius:.1f} px\n"
                 f"• 交互操作: 单击联动视口选中，双击平滑居中聚焦，右键弹出复核菜单"

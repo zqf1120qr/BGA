@@ -11,6 +11,75 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
+def format_bga_pin_name(row_idx: int, col_idx: int) -> str:
+    """
+    依据 JEDEC / IPC 工业标准生成 BGA 阵列引脚位号：
+    - 行使用英文字母，跳过易混淆字母 I, O, Q, S, X, Z (有效 20 个字母: A, B, C, D, E, F, G, H, J, K, L, M, N, P, R, T, U, V, W, Y)
+    - 超出 20 行时采用双字母: AA, AB, AC... AY, BA, BB...
+    - 列使用从 1 开始的阿拉伯数字: 1, 2, 3...
+    """
+    if row_idx is None or col_idx is None or row_idx < 0 or col_idx < 0:
+        return ""
+    letters = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "T", "U", "V", "W", "Y"]
+    if row_idx < 20:
+        row_str = letters[row_idx]
+    else:
+        q = (row_idx // 20) - 1
+        r = row_idx % 20
+        row_str = (letters[q] if q < len(letters) else "Z") + letters[r]
+    col_str = str(col_idx + 1)
+    return f"{row_str}{col_str}"
+
+
+def derive_bga_pin_names(records: List['SolderBallRecord']):
+    """
+    为所有焊球推导并分配标准 BGA 工业位号 (如 A1, B12):
+    1. 优先使用拓扑网格给出的 grid_row, grid_col；
+    2. 若未提取网格，通过空间坐标行列聚类自适应推导行与列。
+    """
+    if not records:
+        return
+
+    has_grid = any(r.grid_row is not None and r.grid_col is not None for r in records)
+    if has_grid:
+        valid_rows = [r.grid_row for r in records if r.grid_row is not None]
+        valid_cols = [r.grid_col for r in records if r.grid_col is not None]
+        min_r = min(valid_rows, default=0)
+        min_c = min(valid_cols, default=0)
+        for r in records:
+            if r.grid_row is not None and r.grid_col is not None:
+                norm_r = r.grid_row - min_r
+                norm_c = r.grid_col - min_c
+                r.pin_name = format_bga_pin_name(norm_r, norm_c)
+            else:
+                r.pin_name = f"#{r.index}"
+    else:
+        sorted_by_y = sorted(records, key=lambda x: x.cy)
+        avg_r = float(np.median([r.radius for r in records])) if records else 10.0
+        row_tol = avg_r * 1.2
+
+        rows = []
+        for rec in sorted_by_y:
+            placed = False
+            for row in rows:
+                row_mean_y = sum(x.cy for x in row) / len(row)
+                if abs(rec.cy - row_mean_y) <= row_tol:
+                    row.append(rec)
+                    placed = True
+                    break
+            if not placed:
+                rows.append([rec])
+
+        rows.sort(key=lambda row: sum(x.cy for x in row) / len(row))
+
+        for r_idx, row in enumerate(rows):
+            row.sort(key=lambda x: x.cx)
+            for c_idx, rec in enumerate(row):
+                rec.grid_row = r_idx
+                rec.grid_col = c_idx
+                rec.pin_name = format_bga_pin_name(r_idx, c_idx)
+
+
 class SolderBallRecord:
     """单个焊球的完整物理与质检状态"""
     def __init__(
@@ -22,6 +91,9 @@ class SolderBallRecord:
         void_circles: List[Dict[str, Any]],
         void_rate: float,
         confidence: float = 0.80,
+        grid_row: Optional[int] = None,
+        grid_col: Optional[int] = None,
+        pin_name: str = "",
     ):
         self.index = index
         self.cx = cx
@@ -30,6 +102,9 @@ class SolderBallRecord:
         self.void_circles = void_circles
         self.void_rate = void_rate
         self.confidence = confidence
+        self.grid_row = grid_row
+        self.grid_col = grid_col
+        self.pin_name = pin_name or f"#{index}"
 
         # 虚焊指标
         self.area = math.pi * (radius ** 2)
@@ -136,6 +211,8 @@ class InspectionSession:
             void_rate = float(item.get("void_rate", 0.0))
             conf = float(item.get("confidence", 0.80))
 
+            grid_row = item.get("grid_row")
+            grid_col = item.get("grid_col")
             record = SolderBallRecord(
                 index=idx,
                 cx=float(center[0]),
@@ -144,8 +221,12 @@ class InspectionSession:
                 void_circles=void_circles,
                 void_rate=void_rate,
                 confidence=conf,
+                grid_row=grid_row,
+                grid_col=grid_col,
             )
             self.solder_records.append(record)
+
+        derive_bga_pin_names(self.solder_records)
 
         # 2. 关联虚焊缺陷数据
         insufficient_details = result.get("insufficient_details", [])
