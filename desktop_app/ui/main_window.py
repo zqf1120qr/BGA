@@ -1736,10 +1736,9 @@ class MainWindow(QMainWindow):
                 from xray_void_seg import get_detector_instance
                 device, _, _ = hardware_sniffer.resolve_device(self.config.hardware_device)
                 det = get_detector_instance(self.config.weights_path, device=device)
-                import torch
-                dummy = torch.zeros((1, 3, 640, 640), dtype=torch.half if det.half else torch.float32, device=det.device)
-                with torch.no_grad():
-                    _ = det.model(dummy)
+                # 🌟 交给检测器内部统一预热：使用与正式推理相同的 img_size，
+                # 并与正式推理共用互斥锁，避免 640 空跑与 1280 质检并发踩踏 Detect.grid 缓存
+                det.warmup()
             except Exception:
                 pass
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 import cv2
@@ -156,6 +157,10 @@ class BGADetector:
         set_logging()
         self.device = select_device(device)
         self.half = self.device.type != "cpu"
+        # 模型前向推理互斥锁：YOLO 的 Detect 头内部会缓存 grid (不同输入尺寸会重建)，
+        # 预热线程与质检线程若并发前向推理，会互相踩踏 grid 缓存，
+        # 触发 "The size of tensor a (40) must match the size of tensor b (20)" 报错。
+        self._infer_lock = threading.RLock()
 
         self.model = attempt_load(weights, map_location=self.device)
         self.stride = int(self.model.stride.max())
@@ -167,6 +172,21 @@ class BGADetector:
             self.model.half()
         if self.debug and self.debug_dir:
             os.makedirs(self.debug_dir, exist_ok=True)
+
+    def warmup(self):
+        """空跑一次预热 (消除首图冷启动)。
+
+        🌟 关键约束：预热输入尺寸必须与正式推理完全一致 (self.img_size)，
+        否则 Detect 头缓存的 grid 尺寸与真实输入不匹配，会随机报张量尺寸错误。
+        """
+        size = int(self.img_size)
+        dummy = torch.zeros(
+            (1, 3, size, size),
+            dtype=torch.half if self.half else torch.float32,
+            device=self.device,
+        )
+        with self._infer_lock, torch.no_grad():
+            self.model(dummy)
 
     def _run_pre_filter(self, im0, raw_points, component_mask, radius_hint: Optional[float], relax: bool = False):
         prelim_kept: List[PointDict] = []
@@ -249,7 +269,7 @@ class BGADetector:
                 img_t = img_t.unsqueeze(0)
 
             t1 = time_synchronized()
-            with torch.no_grad():
+            with self._infer_lock, torch.no_grad():
                 pred = self.model(img_t, augment=self.augment)[0]
             t2 = time_synchronized()
             pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic_nms)
