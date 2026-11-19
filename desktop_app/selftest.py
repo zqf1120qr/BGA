@@ -30,7 +30,7 @@ import traceback
 SELFTEST_OUTPUT_DIRNAME = "selftest_output"
 REPORT_FILENAME = "selftest_report.txt"
 
-# GPU 推理硬依赖及跨机型高兼容保护库（切勿在裁剪时移除）
+# GPU 推理硬依赖及 torch_cuda.dll 静态 PE 导入表必需库（缺失会导致干净客户机 WinError 126）
 REQUIRED_TORCH_DLLS = [
     "torch_cuda.dll", "torch_cpu.dll", "c10.dll", "c10_cuda.dll",
     "cudart64_12.dll", "cupti64_2025.1.1.dll",
@@ -39,13 +39,13 @@ REQUIRED_TORCH_DLLS = [
     "cudnn_engines_precompiled64_9.dll",
     "cudnn_engines_runtime_compiled64_9.dll",
     "cublas64_12.dll", "cublasLt64_12.dll",
+    "cufft64_11.dll", "cusolver64_11.dll", "cusparse64_12.dll",
     "nvrtc64_120_0.dll", "nvJitLink_120_0.dll",
 ]
 
-# 已确认可安全裁剪的无风险子库：存在说明精简未生效（仅提示，不算失败）
+# 已通过 PE 导入表递归确认可安全裁剪的无静态依赖子库（存在仅提示，不算失败）
 SLIMMED_TORCH_DLLS = [
-    "cufft64_11.dll", "cufftw64_11.dll",
-    "cusolver64_11.dll", "cusolverMg64_11.dll", "cusparse64_12.dll",
+    "cufftw64_11.dll", "cusolverMg64_11.dll",
     "curand64_10.dll", "cudnn_adv64_9.dll",
     "nvperf_host.dll",
 ]

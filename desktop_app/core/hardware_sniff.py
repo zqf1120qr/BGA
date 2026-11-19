@@ -28,6 +28,7 @@ class HardwareSniffer:
             cls._instance.gpu_memory_gb = 0.0
             cls._instance.cpu_cores = os.cpu_count() or 4
             cls._instance.cpu_arch = platform.processor() or "x86_64"
+            cls._instance.torch_load_error = ""
         return cls._instance
 
     def _ensure_hardware(self):
@@ -36,6 +37,7 @@ class HardwareSniffer:
         self._initialized = True
         try:
             import torch
+            self.torch_load_error = ""
             self.has_cuda = torch.cuda.is_available()
             self.gpu_count = torch.cuda.device_count() if self.has_cuda else 0
             if self.has_cuda and self.gpu_count > 0:
@@ -50,8 +52,9 @@ class HardwareSniffer:
                     torch.set_num_threads(self.cpu_cores)
                 except Exception:
                     pass
-        except Exception:
+        except Exception as e:
             self.has_cuda = False
+            self.torch_load_error = f"{type(e).__name__}: {e}"
 
     def resolve_device(self, user_preference: str = "auto") -> Tuple[str, str, str]:
         """
@@ -61,6 +64,12 @@ class HardwareSniffer:
                  status_color: "green" (GPU) | "yellow" (CPU正常) | "orange" (降级警示)
         """
         self._ensure_hardware()
+        if self.torch_load_error:
+            return (
+                "cpu",
+                f"GPU 加速加载失败，已自动回退至 CPU 推理 ({self.cpu_cores}核)",
+                "#f97316"  # 橙色提示
+            )
         pref = str(user_preference).strip().lower()
 
         if pref == "auto":
@@ -73,7 +82,7 @@ class HardwareSniffer:
             else:
                 return (
                     "cpu",
-                    f"CPU 多核模式: {self.cpu_cores} 核并发 (硬件无独显自动适配)",
+                    f"CPU 多核推理模式 ({self.cpu_cores}核 · 未启用 GPU 加速)",
                     "#eab308"  # 黄色
                 )
 
@@ -85,17 +94,17 @@ class HardwareSniffer:
                     "#22c55e"
                 )
             else:
-                # 关键防护：工厂电脑无独显但配置了 GPU 时，平滑降级，绝不崩溃
+                # 关键防护：工厂电脑无独显或驱动不支持时平滑降级，绝不崩溃
                 return (
                     "cpu",
-                    f"未检测到独显，已安全降级至 CPU ({self.cpu_cores}核)",
+                    f"GPU 加速未就绪，已自动回退至 CPU 推理 ({self.cpu_cores}核)",
                     "#f97316"  # 橙色预警
                 )
 
         else:  # "cpu"
             return (
                 "cpu",
-                f"CPU 纯处理器模式 ({self.cpu_cores}核)",
+                f"CPU 多核推理模式 ({self.cpu_cores}核)",
                 "#94a3b8"  # 灰色/静默蓝
             )
 

@@ -155,24 +155,20 @@ def deploy_external_assets():
 
 
 # =====================================================================
-# 体积精简：剔除推理阶段永不加载的 CUDA 运行时子库与大体积无用资源
-# 说明：
-# - 仅剔除 100% 确定不涉及 CNN 推理的子库（cuFFT / cuSOLVER / cuSPARSE / cuRAND / RNN 引擎等）；
-# - 保留 cublasLt64_12.dll 与 NVRTC / nvJitLink 运行时编译链，确保跨代 NVIDIA 显卡
-#   (RTX 20/30/40/50 等) 及任意 ROI 裁剪尺寸下均具备最高兼容性与稳定性。
+# 体积精简：仅剔除确认不在 torch_cuda.dll / torch_cpu.dll 静态 PE 导入表中的
+# 无关子库与大体积第三方误收集资源。
+# 重要教训：
+# - cufft64_11.dll / cusolver64_11.dll / cusparse64_12.dll 属于 torch_cuda.dll 的
+#   静态 PE 硬导入表依赖！在装有 CUDA Toolkit 的开发机上删除后会被系统 PATH 掩盖，
+#   但在无 CUDA 的干净客户机上会直接导致 WinError 126 (shm.dll 加载失败)，严禁删除！
+# - 同时保留 cublasLt64_12.dll 与 NVRTC / nvJitLink，确保跨代 NVIDIA 显卡兼容性。
 # =====================================================================
 SLIM_TORCH_DLLS = [
-    # cuFFT（仅频域运算需要，本项目不做 FFT）
-    "cufft64_11.dll", "cufftw64_11.dll",
-    # cuSOLVER（仅线性方程组/特征值求解需要）
-    "cusolver64_11.dll", "cusolverMg64_11.dll",
-    # cuSPARSE（仅稀疏矩阵运算需要）
-    "cusparse64_12.dll",
-    # cuDNN 的 RNN / 注意力引擎子库（CNN 检测网络不使用）
+    # 以下子库已通过 PE 静态导入表全量递归扫描确认：无任何核心 DLL 静态导入
+    "cufftw64_11.dll",
+    "cusolverMg64_11.dll",
     "cudnn_adv64_9.dll",
-    # cuRAND（推理不需要 GPU 端随机数）
     "curand64_10.dll",
-    # CUDA 性能剖析接口
     "nvperf_host.dll",
 ]
 
