@@ -11,17 +11,20 @@ from __future__ import annotations
 
 import os
 from typing import Optional
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QLocale, Qt, Signal
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
+    QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -62,6 +65,11 @@ class HorizontalNumericStepper(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
+        # 🌟 关键：把 [-] 输入框 [+] 锁成刚性整体。
+        # 否则父布局（顶栏 QHBoxLayout）把多余宽度分给本控件时，这三个固定尺寸子控件
+        # 会被居中分散排布，出现「按钮和输入框之间被撑开一大段空白」的观感。
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         # 左侧减号按钮 [-]
         self.btn_minus = QPushButton("—")
@@ -72,16 +80,25 @@ class HorizontalNumericStepper(QWidget):
         self.btn_minus.setAutoRepeatInterval(80)
         self.btn_minus.setToolTip("减少数值 (步长微调)")
 
-        # 中间纯数字输入框 (隐藏所有原生上下按键，彻底防止边框切断或溢出)
-        self.spin = QDoubleSpinBox()
-        self.spin.setRange(min_val, max_val)
-        self.spin.setSingleStep(step)
-        self.spin.setDecimals(decimals)
-        self.spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin.setFixedHeight(26)
-        self.spin.setFixedWidth(52)
-        self.spin.setCursor(Qt.CursorShape.IBeamCursor)
+        # 中间纯数字输入框
+        # 🌟 说明：此处原为 QDoubleSpinBox，但 Qt 样式表只要给 QDoubleSpinBox 设置了
+        # border / padding，内部编辑区就会被算成 1px 宽（数字完全不可见）。
+        # 改用 QLineEdit + QDoubleValidator，外观与交互一致，且文本渲染稳定可靠。
+        self._blocked = False
+        self._value = float(min_val)
+
+        self.edit = QLineEdit()
+        self._validator = QDoubleValidator(float(min_val), float(max_val), decimals, self)
+        self._validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        self._validator.setLocale(QLocale.c())
+        self.edit.setValidator(self._validator)
+        self.edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.edit.setFixedHeight(26)
+        self.edit.setFixedWidth(52)
+        self.edit.setCursor(Qt.CursorShape.IBeamCursor)
+        self.edit.setMaxLength(8)
+        # 兼容旧属性名 (内部曾用 self.spin 指代该输入框)
+        self.spin = self.edit
 
         # 右侧加号按钮 [+]
         self.btn_plus = QPushButton("+")
@@ -119,7 +136,7 @@ class HorizontalNumericStepper(QWidget):
         self.btn_plus.setStyleSheet(btn_qss)
 
         spin_qss = f"""
-            QDoubleSpinBox {{
+            QLineEdit {{
                 background-color: #0b1120;
                 color: {color_hex};
                 border: 1px solid #334155;
@@ -128,36 +145,81 @@ class HorizontalNumericStepper(QWidget):
                 font-weight: bold;
                 padding: 0px 2px;
             }}
-            QDoubleSpinBox:hover {{
+            QLineEdit:hover {{
                 border: 1px solid #475569;
             }}
-            QDoubleSpinBox:focus {{
+            QLineEdit:focus {{
                 border: 1px solid {color_hex};
                 background-color: #0f172a;
             }}
         """
-        self.spin.setStyleSheet(spin_qss)
+        self.edit.setStyleSheet(spin_qss)
 
         self.btn_minus.clicked.connect(self._step_down)
         self.btn_plus.clicked.connect(self._step_up)
-        self.spin.valueChanged.connect(self.valueChanged)
+        self.edit.textEdited.connect(self._on_text_edited)
+        self.edit.editingFinished.connect(self._commit_from_text)
+
+        self.setValue(self._value)
+
+    # ================= 内部数值读写 =================
+    def _format(self, val: float) -> str:
+        return f"{val:.{self.decimals}f}"
+
+    def _clamp(self, val: float) -> float:
+        return max(self.min_val, min(self.max_val, float(val)))
+
+    def _on_text_edited(self, _text: str):
+        """用户逐字输入时：只要当前文本已是合法数值，就实时同步。"""
+        val = self._parse_text()
+        if val is None:
+            return
+        self._value = self._clamp(val)
+        if not self._blocked:
+            self.valueChanged.emit(self._value)
+
+    def _commit_from_text(self):
+        """失去焦点 / 回车时：规范化文本（补小数位、纠正越界值）。"""
+        val = self._parse_text()
+        if val is None:
+            self.edit.setText(self._format(self._value))
+            return
+        self.setValue(val)
+
+    def _parse_text(self):
+        text = self.edit.text().strip().replace("%", "")
+        if not text or text in ("-", ".", "-.", "+"):
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
 
     def _step_down(self):
-        new_val = max(self.min_val, self.spin.value() - self.step)
-        self.spin.setValue(round(new_val, self.decimals))
+        self.setValue(round(self._value - self.step, self.decimals))
 
     def _step_up(self):
-        new_val = min(self.max_val, self.spin.value() + self.step)
-        self.spin.setValue(round(new_val, self.decimals))
+        self.setValue(round(self._value + self.step, self.decimals))
 
     def value(self) -> float:
-        return self.spin.value()
+        val = self._parse_text()
+        return self._value if val is None else self._clamp(val)
 
-    def setValue(self, val: float):
-        self.spin.setValue(val)
+    def setValue(self, val: float, force: bool = False):
+        new_val = self._clamp(val)
+        changed = abs(new_val - self._value) > 1e-9
+        self._value = new_val
+        text = self._format(new_val)
+        if self.edit.text() != text:
+            self.edit.blockSignals(True)
+            self.edit.setText(text)
+            self.edit.blockSignals(False)
+        if (changed or force) and not self._blocked:
+            self.valueChanged.emit(new_val)
 
     def blockSignals(self, b: bool) -> bool:
-        return self.spin.blockSignals(b)
+        self._blocked = bool(b)
+        return super().blockSignals(b)
 
 
 class ParamPanel(QFrame):

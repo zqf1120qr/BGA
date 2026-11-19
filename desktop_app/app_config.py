@@ -43,8 +43,16 @@ class AppConfigManager:
 
         self.config_file = os.path.join(self.app_dir, "settings.json")
         self.config = InspectionConfig()
-        
+
         # 寻找默认权重路径 (优先外部同级目录，回退内部嵌入资源)
+        default_weights = self._discover_default_weights()
+        if default_weights:
+            self.config.weights_path = default_weights
+
+        self.load()
+
+    def _discover_default_weights(self) -> str:
+        """按优先级探测本机可用的模型权重文件，未找到返回空串。"""
         weights_candidates = [
             os.path.join(self.app_dir, "backend", "best.pt"),
             os.path.join(self.app_dir, "best.pt"),
@@ -53,10 +61,8 @@ class AppConfigManager:
         ]
         for w in weights_candidates:
             if os.path.exists(w):
-                self.config.weights_path = os.path.abspath(w)
-                break
-
-        self.load()
+                return os.path.abspath(w)
+        return ""
 
     def load(self):
         if os.path.exists(self.config_file):
@@ -68,6 +74,20 @@ class AppConfigManager:
                             setattr(self.config, k, v)
             except Exception as e:
                 print(f"[WARN] 读取配置文件失败: {e}")
+
+        # 🌟 权重路径自愈：settings.json 常携带另一台机器的绝对路径，
+        # 换机后该文件并不存在，会导致推理阶段抛出难以理解的 "list index out of range"。
+        # 这里统一校验，失效则回退到本机探测到的默认权重。
+        wp = (self.config.weights_path or "").strip()
+        if not wp or not os.path.isfile(wp):
+            fallback = self._discover_default_weights()
+            if fallback:
+                if wp:
+                    print(f"[WARN] 配置中的模型权重不存在: {wp}，已自动改用: {fallback}")
+                self.config.weights_path = fallback
+            elif wp:
+                print(f"[WARN] 配置中的模型权重不存在: {wp}，且未在 backend/ 目录找到 best.pt")
+                self.config.weights_path = ""
 
     def save(self) -> bool:
         """保存当前配置到 settings.json"""

@@ -156,11 +156,19 @@ class BGADetector:
 
         set_logging()
         self.device = select_device(device)
-        self.half = self.device.type != "cpu"
+        self.half = self.device.type == "cuda"
         # 模型前向推理互斥锁：YOLO 的 Detect 头内部会缓存 grid (不同输入尺寸会重建)，
         # 预热线程与质检线程若并发前向推理，会互相踩踏 grid 缓存，
         # 触发 "The size of tensor a (40) must match the size of tensor b (20)" 报错。
         self._infer_lock = threading.RLock()
+
+        # 权重缺失时直接给出可读报错：否则 attempt_load 会误入 attempt_download 分支，
+        # 最后在 git tag 解析处抛出毫无关联的 "list index out of range"。
+        if not isinstance(weights, (list, tuple)) and not os.path.isfile(str(weights)):
+            raise FileNotFoundError(
+                f"模型权重文件不存在: {weights}\n"
+                f"请检查工艺配方中的权重路径，或将 best.pt 放回程序目录下的 backend/ 文件夹。"
+            )
 
         self.model = attempt_load(weights, map_location=self.device)
         self.stride = int(self.model.stride.max())
@@ -170,8 +178,30 @@ class BGADetector:
             self.model = TracedModel(self.model, self.device, self.img_size)
         if self.half:
             self.model.half()
+            # 半精度数值自检：部分老架构 GPU（如 GTX 16 系列 TU117）在 cuDNN fp16 卷积算子上
+            # 会静默产出全 NaN，表现为"焊点一个都检测不到"（raw_count = 0）而不报任何错。
+            # 这里用一次真实量级的前向探针核实 fp16 是否可用，不可用则立即回退 fp32。
+            if not self._fp16_is_numeric():
+                self.half = False
+                self.model.float()
+                print(
+                    "[WARNING] 当前显卡 (%s) 的 fp16 推理输出非法数值 (NaN)，已自动降级为 fp32 全精度推理；"
+                    "检测结果不受影响。" % torch.cuda.get_device_name(self.device)
+                )
         if self.debug and self.debug_dir:
             os.makedirs(self.debug_dir, exist_ok=True)
+
+    def _fp16_is_numeric(self) -> bool:
+        """用随机张量空跑一次 fp16 前向，判断输出是否存在 NaN / Inf。"""
+        size = int(self.img_size)
+        try:
+            probe = torch.rand((1, 3, size, size), dtype=torch.half, device=self.device)
+            with self._infer_lock, torch.no_grad():
+                pred = self.model(probe)[0]
+            return bool(torch.isfinite(pred).all().item())
+        except Exception as exc:  # 算子不支持 / 显存不足等异常同样视为 fp16 不可用
+            print("[WARNING] fp16 探针推理异常 (%s)，回退 fp32。" % exc)
+            return False
 
     def warmup(self):
         """空跑一次预热 (消除首图冷启动)。
@@ -271,6 +301,15 @@ class BGADetector:
             t1 = time_synchronized()
             with self._infer_lock, torch.no_grad():
                 pred = self.model(img_t, augment=self.augment)[0]
+            # 运行时兜底：即便初始化探针通过，个别图像仍可能触发 fp16 溢出。
+            # 一旦输出非法，永久降级 fp32 并当场重算，避免"静默漏检"。
+            if self.half and not torch.isfinite(pred).all():
+                self.half = False
+                self.model.float()
+                img_t = img_t.float()
+                with self._infer_lock, torch.no_grad():
+                    pred = self.model(img_t, augment=self.augment)[0]
+                print("[WARNING] 推理输出出现 NaN/Inf，已切换为 fp32 并重算当前图像。")
             t2 = time_synchronized()
             pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic_nms)
             t3 = time_synchronized()

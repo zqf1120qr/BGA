@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -39,6 +40,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -417,6 +419,10 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._load_stylesheet()
         self._connect_signals()
+        # 🌟 启动时把持久化的视图模式同步到单选按钮 + 画布，
+        # 否则会出现「按钮显示 全部细轮廓、画面却按 纯原图 不画任何标注」的错位假象
+        self._sync_view_mode_from_config()
+        self._apply_toolbar_responsive(self.width())
 
 
         # 4. 后台静默预热深度学习模型 (预热 GPU/CPU，消除首次点击的冷启动等待)
@@ -590,6 +596,9 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(toolbar_frame)
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(12)
+        # 供响应式布局 (_apply_toolbar_responsive) 访问
+        self._toolbar_frame = toolbar_frame
+        self._toolbar_layout = layout
 
         # 视图模式独立分段控制胶囊容器 (高对比深色卡片底座，绝不与顶栏背景混淆)
         self.view_mode_frame = QFrame()
@@ -599,6 +608,7 @@ class MainWindow(QMainWindow):
         view_layout.setSpacing(10)
 
         lbl_mode = QLabel("视图模式:")
+        self.lbl_mode_prefix = lbl_mode
         view_layout.addWidget(lbl_mode)
 
         self.btn_view_outline = QRadioButton("全部细轮廓 (默认)")
@@ -626,9 +636,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.view_mode_frame)
 
         # 标注透明度调节 (保留在顶栏原本位置，支持滑块、键盘手输具体数值与加减步进微调)
-        lbl_alpha = QLabel("| 标注透明度:")
-        lbl_alpha.setStyleSheet("font-size: 11px; color: #94a3b8; margin-left: 6px;")
-        layout.addWidget(lbl_alpha)
+        self.lbl_alpha = QLabel("| 标注透明度:")
+        self.lbl_alpha.setStyleSheet("font-size: 11px; color: #94a3b8; margin-left: 6px;")
+        layout.addWidget(self.lbl_alpha)
 
         self.slider_alpha = QSlider(Qt.Orientation.Horizontal)
         self.slider_alpha.setRange(10, 100)
@@ -645,10 +655,50 @@ class MainWindow(QMainWindow):
         self.spin_alpha.valueChanged.connect(self._on_alpha_spin_changed)
         layout.addWidget(self.spin_alpha)
 
+        # 🌟 窄窗口折叠入口：视口辅助按钮收进「更多」下拉菜单，避免顶栏被挤压溢出/文字被裁切
+        self.btn_more = QToolButton()
+        self.btn_more.setText("更多")
+        self.btn_more.setToolTip("更多视口操作 (窗口较窄时自动收起的按钮)")
+        self.btn_more.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_more.setStyleSheet("""
+            QToolButton {
+                background-color: #141d2d;
+                color: #cbd5e1;
+                border: 1px solid #243044;
+                border-radius: 4px;
+                padding: 3px 6px 3px 8px;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+                font-size: 11px;
+                font-weight: 500;
+                min-height: 20px;
+            }
+            QToolButton:hover {
+                background-color: #243044;
+                border: 1px solid #38bdf8;
+                color: #ffffff;
+            }
+        """)
+        self._menu_more = QMenu(self.btn_more)
+        self._menu_more.setStyleSheet(
+            "QMenu { background-color: #141d2d; color: #cbd5e1; border: 1px solid #243044; padding: 4px; }"
+            "QMenu::item { padding: 5px 22px 5px 14px; border-radius: 4px; font-size: 11px; }"
+            "QMenu::item:selected { background-color: #1e293b; color: #ffffff; }"
+        )
+        self._menu_more.addAction("适应窗口").triggered.connect(lambda: self.canvas.fit_in_view())
+        self._menu_more.addAction("1:1 原尺寸").triggered.connect(lambda: self.canvas.zoom_1to1())
+        self._menu_more.addAction("放大 +").triggered.connect(lambda: self.canvas.zoom_in())
+        self._menu_more.addAction("缩小 -").triggered.connect(lambda: self.canvas.zoom_out())
+        self._menu_more.addSeparator()
+        self._menu_more.addAction("恢复显示标注").triggered.connect(self._handle_restore_annotations)
+        self.btn_more.setMenu(self._menu_more)
+        self.btn_more.hide()
+        layout.addWidget(self.btn_more)
+
         # 视口辅助控制分隔器
-        lbl_sep = QLabel("|")
-        lbl_sep.setStyleSheet("color: #475569; margin: 0 4px;")
-        layout.addWidget(lbl_sep)
+        self.lbl_sep = QLabel("|")
+        self.lbl_sep.setStyleSheet("color: #475569; margin: 0 4px;")
+        layout.addWidget(self.lbl_sep)
 
         # 视口辅助控制 (锁定文字字号/字重/边距，悬浮仅改背景色，彻底杜绝文字抖动跳跃)
         btn_tool_qss = """
@@ -714,9 +764,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_zoom_out)
 
         # 视口辅助控制分隔器
-        lbl_sep2 = QLabel("|")
-        lbl_sep2.setStyleSheet("color: #475569; margin: 0 4px;")
-        layout.addWidget(lbl_sep2)
+        self.lbl_sep2 = QLabel("|")
+        self.lbl_sep2.setStyleSheet("color: #475569; margin: 0 4px;")
+        layout.addWidget(self.lbl_sep2)
 
         # 一键恢复所有被隐藏标注的快捷按钮
         self.btn_restore_visible = QPushButton("恢复显示标注")
@@ -735,10 +785,10 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # 视口快捷操作指南 (精炼提示 + 悬停完整手势浮窗，彻底消除右侧边界截断)
-        lbl_hint = QLabel("提示: 滚轮缩放 | 拖拽平移 | 空格对比原图 | Esc恢复隐藏标注")
-        lbl_hint.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 500; padding-right: 6px;")
-        lbl_hint.setCursor(Qt.CursorShape.PointingHandCursor)
-        lbl_hint.setToolTip(
+        self.lbl_hint = QLabel("提示: 滚轮缩放 | 拖拽平移 | 空格对比原图 | Esc恢复隐藏标注")
+        self.lbl_hint.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 500; padding-right: 6px;")
+        self.lbl_hint.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_hint.setToolTip(
             "【视口核心快捷操作指南】\n"
             "• 鼠标滚轮 / 顶栏按钮: 缩放画面 (支持 0.1x ~ 10.0x)\n"
             "• 鼠标左键 / 右键按住拖拽: 自由平移画布\n"
@@ -747,9 +797,59 @@ class MainWindow(QMainWindow):
             "• 顶栏【恢复显示标注】或按 Esc 键: 一键恢复所有被隐藏的标注\n"
             "• 选中缺陷焊点按 R 键: 极速排除误检或恢复"
         )
-        layout.addWidget(lbl_hint)
+        layout.addWidget(self.lbl_hint)
 
         parent_layout.addWidget(toolbar_frame)
+
+    # ==============================================================
+    # ================= 🌟 [顶栏响应式自适应] ======================
+    # ==============================================================
+    def _set_toolbar_tier(self, tier: str):
+        """应用顶栏显示档位: "wide" 全量 / "mid" 收起提示 / "narrow" 折叠按钮+短语"""
+        wide = tier == "wide"
+        mid = tier in ("wide", "mid")
+
+        # 1. 右侧快捷提示（占宽最大，优先收起）
+        self.lbl_hint.setVisible(wide)
+
+        # 2. 视口辅助按钮：常用缩放类始终保留，低频项在窄带折叠进「更多 ▾」
+        for btn in (self.btn_fit, self.btn_zoom_in, self.btn_zoom_out):
+            btn.setVisible(True)
+        for btn in (self.btn_1to1, self.btn_restore_visible):
+            btn.setVisible(mid)
+        self.lbl_sep.setVisible(True)
+        self.lbl_sep2.setVisible(mid)
+        self.btn_more.setVisible(not mid)
+
+        # 3. 文案长短自适应（窄带用短语，杜绝单选文字被裁切）
+        self.lbl_mode_prefix.setVisible(mid)
+        if mid:
+            self.btn_view_outline.setText("全部细轮廓 (默认)")
+            self.btn_view_defect.setText("仅高亮缺陷")
+            self.btn_view_raw.setText("纯原图")
+            self.lbl_alpha.setText("| 标注透明度:")
+        else:
+            self.btn_view_outline.setText("细轮廓")
+            self.btn_view_defect.setText("高亮缺陷")
+            self.btn_view_raw.setText("纯原图")
+            self.lbl_alpha.setText("| 透明度:")
+
+    def _apply_toolbar_responsive(self, width: int = None):
+        """按当前宽度自动挑选最合适的顶栏档位：从最全开始逐级降级，直到放得下为止。"""
+        if not hasattr(self, "btn_more"):
+            return
+        w = int(width if width is not None else self.width())
+        for tier in ("wide", "mid", "narrow"):
+            self._set_toolbar_tier(tier)
+            # activate() 强制重算布局，否则 totalSizeHint 会返回上一档的缓存值
+            self._toolbar_layout.activate()
+            if self._toolbar_layout.totalSizeHint().width() <= w - 4:
+                break
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_toolbar_responsive(event.size().width())
+
 
     def _create_status_bar(self, parent_layout: QVBoxLayout):
         status_frame = QFrame()
@@ -1345,6 +1445,22 @@ class MainWindow(QMainWindow):
     def _on_view_mode_changed(self, mode: str):
         self.config.view_mode = mode
         self.canvas.set_view_mode(mode)
+
+    def _sync_view_mode_from_config(self):
+        """启动时把 settings.json 里持久化的视图模式同步到单选按钮与画布，保证二者一致。"""
+        mode = str(self.config.view_mode or "all_outline")
+        btn = {
+            "all_outline": self.btn_view_outline,
+            "defect_only": self.btn_view_defect,
+            "raw_image": self.btn_view_raw,
+        }.get(mode)
+        if btn is None:
+            mode = "all_outline"
+            btn = self.btn_view_outline
+        if not btn.isChecked():
+            btn.setChecked(True)   # 会触发 toggled -> _on_view_mode_changed
+        self.canvas.set_view_mode(mode)
+        self.config.view_mode = mode
 
     def _on_alpha_slider_changed(self, val: int):
         self.spin_alpha.blockSignals(True)
