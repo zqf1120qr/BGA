@@ -226,6 +226,23 @@ class InspectionSession:
             )
             self.solder_records.append(record)
 
+        # 1.5 显示轮廓离群校正：个别焊球的径向梯度拟合会误锁定到焊球外围的暗晕/焊盘边缘，
+        #     导致绘制轮廓明显大于真实焊球（如 11.jpg 中 +12%~+24% 的离群半径）。
+        #     BGA 阵列焊球物理尺寸一致，故以全阵列中位半径为基准对【显示半径】做校正；
+        #     注意仅校正绘制用途的 rec.radius / rec.area，不影响管线输出的空洞率、少锡等判定数据。
+        if self.solder_records:
+            med_r = float(np.median([r.radius for r in self.solder_records]))
+            if med_r > 0:
+                r_lo = med_r * 0.75   # 保留下向偏差空间，真实少锡缩小的焊球仍需可见收缩
+                r_hi = med_r * 1.05   # 上向容差仅 5%，超出即判定为暗晕误锁
+                for rec in self.solder_records:
+                    if rec.radius > r_hi:
+                        rec.radius = med_r  # 上向离群直接吸附到阵列标称半径，保证视觉一致
+                        rec.area = math.pi * (rec.radius ** 2)
+                    elif rec.radius < r_lo:
+                        rec.radius = float(r_lo)
+                        rec.area = math.pi * (rec.radius ** 2)
+
         derive_bga_pin_names(self.solder_records)
 
         # 2. 关联虚焊缺陷数据

@@ -153,13 +153,22 @@ def copy_project_files():
         shutil.copy2(PROJECT_ROOT / "requirements_desktop.txt", APP_DIST_DIR / "requirements_desktop.txt")
     
     doc_src_md = PROJECT_ROOT / "docs" / "用户操作与部署手册.md"
+    doc_src_pdf = PROJECT_ROOT / "docs" / "用户操作与部署手册.pdf"
+    for legacy_name in ("用户操作与部署手册.md", "用户操作与部署手册.txt"):
+        legacy_p = APP_DIST_DIR / legacy_name
+        if legacy_p.exists():
+            legacy_p.unlink(missing_ok=True)
     if doc_src_md.exists():
-        shutil.copy2(doc_src_md, APP_DIST_DIR / "用户操作与部署手册.md")
-        with open(doc_src_md, "r", encoding="utf-8") as f:
-            md_content = f.read()
-        with open(APP_DIST_DIR / "用户操作与部署手册.txt", "w", encoding="utf-8") as f:
-            f.write(md_content)
-        log("已随包生成《用户操作与部署手册.txt》与《用户操作与部署手册.md》！")
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from build_manual_pdf import build_manual_pdf
+            build_manual_pdf(doc_src_md, doc_src_pdf)
+            shutil.copy2(doc_src_pdf, APP_DIST_DIR / "用户操作与部署手册.pdf")
+            log("已随包生成企业级《用户操作与部署手册.pdf》！")
+        except Exception as exc:
+            log(f"[WARN] 自动生成手册 PDF 失败: {exc}")
+            if doc_src_pdf.exists():
+                shutil.copy2(doc_src_pdf, APP_DIST_DIR / "用户操作与部署手册.pdf")
 
 
 def copy_runtime_environment():

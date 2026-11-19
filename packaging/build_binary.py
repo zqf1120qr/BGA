@@ -102,18 +102,36 @@ def deploy_external_assets():
         except Exception:
             pass
 
-    # 4. 部署官方标准《用户操作与部署手册》(.md 与 .txt 格式)
+    # 4. 生成并部署官方标准《用户操作与部署手册.pdf》（面向企业甲方交付，不随包附带 .md 与 .txt）
     doc_src_md = os.path.join(PROJECT_ROOT, "docs", "用户操作与部署手册.md")
-    manual_dst_md = os.path.join(DIST_DIR, "用户操作与部署手册.md")
-    manual_dst_txt = os.path.join(DIST_DIR, "用户操作与部署手册.txt")
+    doc_src_pdf = os.path.join(PROJECT_ROOT, "docs", "用户操作与部署手册.pdf")
+    manual_dst_pdf = os.path.join(DIST_DIR, "用户操作与部署手册.pdf")
+
+    # 清理历史可能残留的 .md / .txt 手册
+    for legacy_name in ("用户操作与部署手册.md", "用户操作与部署手册.txt"):
+        legacy_path = os.path.join(DIST_DIR, legacy_name)
+        if os.path.exists(legacy_path):
+            try:
+                os.remove(legacy_path)
+            except Exception:
+                pass
 
     if os.path.exists(doc_src_md):
-        shutil.copyfile(doc_src_md, manual_dst_md)
-        with open(doc_src_md, "r", encoding="utf-8") as f:
-            md_content = f.read()
-        with open(manual_dst_txt, "w", encoding="utf-8") as f:
-            f.write(md_content)
-        log("已随包生成《用户操作与部署手册.txt》与《用户操作与部署手册.md》！")
+        try:
+            if CURRENT_DIR not in sys.path:
+                sys.path.insert(0, CURRENT_DIR)
+            from build_manual_pdf import build_manual_pdf
+            build_manual_pdf(doc_src_md, doc_src_pdf)
+            shutil.copyfile(doc_src_pdf, manual_dst_pdf)
+            log("已自动渲染并随包生成企业级《用户操作与部署手册.pdf》！")
+        except Exception as exc:
+            log(f"[WARN] 自动渲染手册 PDF 失败: {exc}")
+            if os.path.exists(doc_src_pdf):
+                shutil.copyfile(doc_src_pdf, manual_dst_pdf)
+                log("已回退拷贝预生成的《用户操作与部署手册.pdf》！")
+    elif os.path.exists(doc_src_pdf):
+        shutil.copyfile(doc_src_pdf, manual_dst_pdf)
+        log("已随包拷贝《用户操作与部署手册.pdf》！")
 
     # 清理历史旧命名目录 (若存在)
     for old_name in ["BGA_AI_Inspector", "BGA_AI_Inspector_Binary"]:
@@ -136,6 +154,99 @@ def deploy_external_assets():
     log("资产组织与规整部署完成！")
 
 
+# =====================================================================
+# 体积精简：剔除推理阶段永不加载的 CUDA 运行时子库与大体积无用资源
+# 说明：
+# - 仅剔除 100% 确定不涉及 CNN 推理的子库（cuFFT / cuSOLVER / cuSPARSE / cuRAND / RNN 引擎等）；
+# - 保留 cublasLt64_12.dll 与 NVRTC / nvJitLink 运行时编译链，确保跨代 NVIDIA 显卡
+#   (RTX 20/30/40/50 等) 及任意 ROI 裁剪尺寸下均具备最高兼容性与稳定性。
+# =====================================================================
+SLIM_TORCH_DLLS = [
+    # cuFFT（仅频域运算需要，本项目不做 FFT）
+    "cufft64_11.dll", "cufftw64_11.dll",
+    # cuSOLVER（仅线性方程组/特征值求解需要）
+    "cusolver64_11.dll", "cusolverMg64_11.dll",
+    # cuSPARSE（仅稀疏矩阵运算需要）
+    "cusparse64_12.dll",
+    # cuDNN 的 RNN / 注意力引擎子库（CNN 检测网络不使用）
+    "cudnn_adv64_9.dll",
+    # cuRAND（推理不需要 GPU 端随机数）
+    "curand64_10.dll",
+    # CUDA 性能剖析接口
+    "nvperf_host.dll",
+]
+
+SLIM_INTERNAL_PATHS = [
+    # OpenCV 的 FFMPEG 视频编解码后端（本项目只处理静态图像）
+    "cv2/opencv_videoio_ffmpeg4110_64.dll",
+    # Qt QML / Quick / Pdf 运行时（界面为 QWidget 体系，不使用 QML）
+    "PySide6/Qt6Quick.dll", "PySide6/Qt6Qml.dll", "PySide6/Qt6QmlModels.dll",
+    "PySide6/Qt6Pdf.dll", "PySide6/qml",
+    # 未被引用的音频处理包
+    "torchaudio",
+    # HuggingFace / faiss 检索栈（本项目代码零引用，属于传递依赖误收集，约 130MB）
+    "transformers", "tokenizers", "hf_xet", "timm",
+    "faiss", "faiss_cpu.libs", "sentence_transformers",
+    "huggingface_hub-2.2.0.dist-info", "torch-2.11.0+cu128.dist-info",
+]
+
+
+def _dir_size_mb(path):
+    total = 0
+    if os.path.isfile(path):
+        return os.path.getsize(path) / (1024 * 1024)
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            fp = os.path.join(root, name)
+            try:
+                total += os.path.getsize(fp)
+            except OSError:
+                pass
+    return total / (1024 * 1024)
+
+
+def slim_package():
+    """剔除推理用不到的 CUDA 子库与冗余资源，显著压缩分发体积。"""
+    log("开始精简分发包体积 (剔除推理无关的 CUDA 子库 / QML / 视频解码器)...")
+    freed = 0.0
+    removed = 0
+
+    targets = []
+    torch_lib = os.path.join(INTERNAL_DIR, "torch", "lib")
+    for name in SLIM_TORCH_DLLS:
+        targets.append(os.path.join(torch_lib, name))
+    for rel in SLIM_INTERNAL_PATHS:
+        targets.append(os.path.join(INTERNAL_DIR, rel))
+
+    for path in targets:
+        if not os.path.exists(path):
+            continue
+        size = _dir_size_mb(path)
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            freed += size
+            removed += 1
+        except Exception as exc:
+            log(f"  [-] 跳过 {os.path.basename(path)}: {exc}")
+
+    # 清理根目录下误留的测试报表 / 调试 pdf（保留正式交付的《用户操作与部署手册.pdf》）
+    for name in os.listdir(DIST_DIR):
+        if name.lower().endswith(".pdf") and name != "用户操作与部署手册.pdf":
+            try:
+                size = _dir_size_mb(os.path.join(DIST_DIR, name))
+                os.remove(os.path.join(DIST_DIR, name))
+                freed += size
+                removed += 1
+            except Exception:
+                pass
+
+    total_mb = _dir_size_mb(DIST_DIR)
+    log(f"精简完成：移除 {removed} 项，节省 {freed:.0f} MB，当前分发体积约 {total_mb:.0f} MB")
+
+
 def main():
     print("=" * 65)
     print("       🌟 X射线智能工业质检工作站 - 方案 B 一键打包构建系统")
@@ -147,6 +258,7 @@ def main():
     check_and_kill_old_process()
     run_pyinstaller()
     deploy_external_assets()
+    slim_package()
 
     print("=" * 65)
     print("✅ 打包构建成功！")

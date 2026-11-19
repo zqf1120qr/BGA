@@ -128,39 +128,110 @@ def get_detector_instance(weights_path: str, device: str = "0"):
         return _detector_cache[cache_key]
 
 # ==============================================================
-# ================= 🌟 [圆形 NMS 与嵌套抑制算法] ===================
 # ==============================================================
-def circle_nms(circles: List[Circle]) -> List[Circle]:
+# ================= 🌟 [圆形 NMS 与非交叉接壤约束算法] ============
+# ==============================================================
+def circle_nms(circles: List[Circle], min_void_radius: float = 1.0) -> List[Circle]:
     """
-    对单个焊球内检出的所有候选气泡圆执行严格且平滑的抑制：
-    1. 按半径降序排列；
-    2. 彻底消除圈内有圈 (Nesting)：小圆心落在大圆内，或 dist + r_small <= r_large * 1.02 则滤除小圆；
-    3. 消除严重重叠乱圈：两圆圆心相距过近 (dist < kr * 0.45 或 dist < (kr + r) * 0.48) 则滤除较小圆，
-       同时允许相切紧邻的双微孔独立共存。
+    对单个焊球内检出的所有候选气泡圆执行严格非交叉与接壤几何约束：
+    1. 物理真实性：真实金属中，空洞与空洞之间在几何上绝不穿透交叉，最多相切接壤 (Tangent / Bordering)；
+    2. 严格去重与去寄生：
+       - 小圆心落在大圆内 (dist < kr * 0.98) 或完全被包裹 (dist + r <= kr * 1.02) 时彻底滤除；
+       - 重叠深度过大 (dist < (kr + r) * 0.68 或 overlap > 0.35 * min(kr, r)) 时，滤除较小伴生圆；
+    3. 几何接壤约束求解 (Enforce '最多接壤，严禁交叉'):
+       - 对于真实独立的相邻双孔/多孔，若因拟合外扩出现微量重叠 (dist < r1 + r2)，
+         沿连心线等比约束缩减两圆半径使其恰好相切接壤 (r1' + r2' <= dist)；
+       - 彻底根除两圆交叉划破对方轮廓的非真实工业质检瑕疵。
     """
     if not circles:
         return []
+
+    # 步骤 1: 按半径降序排列 (大空洞主峰优先)
     sorted_circles = sorted(circles, key=lambda c: c["radius"], reverse=True)
     kept: List[Circle] = []
+
     for c in sorted_circles:
         cx, cy = c["center"]
-        r = c["radius"]
+        r = float(c["radius"])
         suppress = False
         for kc in kept:
             kcx, kcy = kc["center"]
-            kr = kc["radius"]
+            kr = float(kc["radius"])
             dist = math.hypot(cx - kcx, cy - kcy)
-            # 条件 1: 圈内套圈 (小圆心落在大圆内或几乎完全被包容)
-            if dist + r <= kr * 1.02 or dist < kr * 0.45:
+
+            # 条件 1: 圈内套圈或圆心深入大圆 (属于同一空洞腔体内部的局部波动)
+            if dist < kr * 0.98 or (dist + r) <= kr * 1.02:
                 suppress = True
                 break
-            # 条件 2: 严重重叠 (两圆重叠深度过大)
-            if dist < (kr + r) * 0.48:
+
+            # 条件 2: 严重重叠 (两圆重叠深度过深，属于局部过分割伴生伪圆)
+            overlap = (kr + r) - dist
+            if overlap > 0.35 * min(kr, r) or dist < (kr + r) * 0.68:
+                suppress = True
+                break
+
+        if not suppress:
+            kept.append({"center": (cx, cy), "radius": r})
+
+    if len(kept) <= 1:
+        return kept
+
+    # 步骤 2: 迭代求解多圆相切接壤几何约束 (Enforce dist >= r_i + r_j)
+    # 彻底杜绝任何两圆相交穿刺
+    eps = 1e-4
+    for _ in range(4):
+        modified = False
+        for i in range(len(kept)):
+            for j in range(i + 1, len(kept)):
+                c1 = kept[i]["center"]
+                r1 = kept[i]["radius"]
+                c2 = kept[j]["center"]
+                r2 = kept[j]["radius"]
+                dist = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+
+                # 若两圆存在交叉重叠
+                if dist < (r1 + r2) - eps:
+                    modified = True
+                    # 若两圆心相距过近，无法在满足最小半径的前提下同时存在，淘汰较小圆
+                    if dist < (min_void_radius * 2.0):
+                        kept[j]["radius"] = 0.0
+                        continue
+
+                    # 沿连心线等比收缩半径至精确相切接壤 (r1' + r2' = dist - eps)
+                    scale_factor = (dist - eps) / (r1 + r2)
+                    new_r1 = max(min_void_radius, r1 * scale_factor)
+                    new_r2 = max(min_void_radius, r2 * scale_factor)
+
+                    # 若由于 min_void_radius 约束仍超界，修剪较小圆
+                    if new_r1 + new_r2 > dist - eps:
+                        new_r2 = max(0.0, (dist - eps) - new_r1)
+
+                    kept[i]["radius"] = new_r1
+                    kept[j]["radius"] = new_r2
+
+        # 淘汰收缩后低于物理阈值的残影
+        kept = [c for c in kept if c["radius"] >= min_void_radius]
+        if not modified or len(kept) <= 1:
+            break
+
+    # 步骤 3: 最终安全校验，确保 100% 满足 '最多接壤，严禁交叉'
+    final_kept: List[Circle] = []
+    for c in kept:
+        cx, cy = c["center"]
+        r = c["radius"]
+        suppress = False
+        for fc in final_kept:
+            fcx, fcy = fc["center"]
+            fr = fc["radius"]
+            dist = math.hypot(cx - fcx, cy - fcy)
+            if dist < (r + fr) - eps:
                 suppress = True
                 break
         if not suppress:
-            kept.append(c)
-    return kept
+            final_kept.append(c)
+
+    return final_kept
+
 
 
 def decompose_connected_component(
@@ -239,37 +310,30 @@ def decompose_connected_component(
 # ==============================================================
 # ================= 🌟 [径向梯度边缘自适应精修算法] =================
 # ==============================================================
-def refine_solder_ball_radial_vectorized(
-    roi: np.ndarray,
+def _eval_radial_candidates(
     gx: np.ndarray,
     gy: np.ndarray,
+    g_scale: float,
     local_cx: float,
     local_cy: float,
     nom_r: float,
-    search_dxy: float = 6.0,
-    search_dr: float = 2.5
-) -> tuple[float, float, float]:
+    dx_arr: np.ndarray,
+    dy_arr: np.ndarray,
+    dr_arr: np.ndarray,
+    cos_a: np.ndarray,
+    sin_a: np.ndarray,
+    center_penalty_w: float,
+    r_penalty_w: float,
+    r_expand_extra_w: float,
+) -> tuple[float, float, float, float]:
     """
-    基于径向梯度通量 (Daugman-like Radial Gradient Flux) 的亚像素高鲁棒焊球边缘拟合算法：
-    保持 100% 原生工业高精度数学逻辑，依靠外层多核线程池并发获得极致加速。
+    向量化评估候选圆周的饱和径向梯度通量与法向一致性得分。
+    - 使用软饱和函数 x / sqrt(1 + x^2) 抑制背景矩形元件/白底等单侧超强阶跃边缘的吸偏效应；
+    - 保留强负梯度惩罚，防止圆周切穿背景亮区或内部空洞边缘；
+    - 结合梯度法向对齐度 (cos_align^2)，过滤斜交的直线走线与贴片边框。
     """
-    roi_h, roi_w = roi.shape
-    if roi_h < 5 or roi_w < 5 or nom_r < 3:
-        return float(local_cx), float(local_cy), float(nom_r)
-
-    angles = np.linspace(0, 2 * np.pi, 28, endpoint=False, dtype=np.float32)
-    cos_a = np.cos(angles)
-    sin_a = np.sin(angles)
-
-    # 针对超大焊球对上限做轻微限幅，防止大图内存暴增
-    dxy = min(float(search_dxy), 6.5)
-    dr = min(float(search_dr), 3.0)
-
-    dx = np.arange(-dxy, dxy + 0.51, 0.5, dtype=np.float32)
-    dy = np.arange(-dxy, dxy + 0.51, 0.5, dtype=np.float32)
-    dr_arr = np.arange(-dr, dr + 0.51, 0.5, dtype=np.float32)
-
-    DX, DY, DR = np.meshgrid(dx, dy, dr_arr, indexing='ij')
+    roi_h, roi_w = gx.shape
+    DX, DY, DR = np.meshgrid(dx_arr, dy_arr, dr_arr, indexing='ij')
     cands_dx = DX.ravel()
     cands_dy = DY.ravel()
     cands_r = (nom_r + DR).ravel()
@@ -285,17 +349,176 @@ def refine_solder_ball_radial_vectorized(
     sample_gy = gy[py, px]
 
     rad_grad = sample_gx * cos_a[None, :] + sample_gy * sin_a[None, :]
+    gmag = np.sqrt(sample_gx * sample_gx + sample_gy * sample_gy) + 1e-4
+    cos_align = rad_grad / gmag
 
-    # 取 35 分位数：消除单侧走线、贴片引脚或背景明暗阶跃干扰
-    scores = np.percentile(rad_grad, 35, axis=1)
+    # 线性保留焊球自身边缘梯度尖峰，仅对超过自适应 cap 的单侧极端外部阶跃做截断；负梯度直接计入惩罚
+    norm_rg = np.clip(rad_grad / g_scale, -1.0, 1.0)
+    align_weight = np.where(rad_grad > 0.0, np.clip(cos_align, 0.0, 1.0), 1.0)
+    point_score = norm_rg * align_weight
 
-    # 中心漂移与半径偏离惩罚
+    # 均值 + 35 分位数融合：尖峰精确定位靠均值，抗单侧遮挡靠 35 分位数
+    mean_score = np.mean(point_score, axis=1)
+    p35_score = np.percentile(point_score, 35, axis=1)
+    edge_score = 0.55 * mean_score + 0.45 * p35_score
+
     dist = np.hypot(cands_dx, cands_dy)
-    r_penalty = 0.5 * np.abs(cands_r - nom_r)
-    final_scores = scores - 0.7 * dist - r_penalty
+    dr_diff = cands_r - nom_r
+    r_pen = r_penalty_w * np.abs(dr_diff) + r_expand_extra_w * np.maximum(0.0, dr_diff)
+    final_scores = edge_score - center_penalty_w * dist - r_pen
 
     best_idx = int(np.argmax(final_scores))
-    return float(local_cx + cands_dx[best_idx]), float(local_cy + cands_dy[best_idx]), float(cands_r[best_idx])
+    return (
+        float(local_cx + cands_dx[best_idx]),
+        float(local_cy + cands_dy[best_idx]),
+        float(cands_r[best_idx]),
+        float(edge_score[best_idx]),
+    )
+
+
+def _refine_solder_ball_radial_with_score(
+    roi: np.ndarray,
+    gx: np.ndarray,
+    gy: np.ndarray,
+    local_cx: float,
+    local_cy: float,
+    nom_r: float,
+    search_dxy: float = 6.0,
+    search_dr: float = 2.5,
+    center_penalty_w: float = 0.006,
+    r_penalty_w: float = 0.008,
+    r_expand_extra_w: float = 0.018,
+) -> tuple[float, float, float, float]:
+    """
+    抗背景干扰的粗到精 (Coarse-to-Fine) 亚像素焊球边缘拟合算法：
+    1. 粗搜 (步长 1.0px, 24 角度) 快速锁定主峰；
+    2. 精搜 (步长 0.5px, 32 角度) 亚像素精细收敛；
+    3. 使用 ROI 梯度 90 分位数作为截断尺度，既保留高对比度焊球自身的尖峰定位精度，
+       又截断外部单侧超强背景阶跃，同时对强负梯度施加惩罚。
+    """
+    roi_h, roi_w = roi.shape
+    if roi_h < 5 or roi_w < 5 or nom_r < 3:
+        return float(local_cx), float(local_cy), float(nom_r), 0.0
+
+    # 自适应高位截断尺度：保留焊球边缘尖峰分辨率，同时抑制单侧极端外部阶跃
+    roi_gmag = np.sqrt(gx * gx + gy * gy)
+    g_scale = float(max(30.0, np.percentile(roi_gmag, 90)))
+
+    dxy = min(float(search_dxy), 6.5)
+    dr = min(float(search_dr), 3.0)
+
+    # 阶段 1: 粗搜索 (步长 1.0px)
+    angles_c = np.linspace(0, 2 * np.pi, 24, endpoint=False, dtype=np.float32)
+    dx_c = np.arange(-dxy, dxy + 0.51, 1.0, dtype=np.float32)
+    dy_c = np.arange(-dxy, dxy + 0.51, 1.0, dtype=np.float32)
+    dr_c = np.arange(-dr, dr + 0.51, 1.0, dtype=np.float32)
+
+    cx1, cy1, r1, _ = _eval_radial_candidates(
+        gx, gy, g_scale, local_cx, local_cy, nom_r,
+        dx_c, dy_c, dr_c, np.cos(angles_c), np.sin(angles_c),
+        center_penalty_w, r_penalty_w, r_expand_extra_w,
+    )
+
+    # 阶段 2: 亚像素精搜索 (在粗搜最优点附近 ±1.0px, 步长 0.5px)
+    angles_f = np.linspace(0, 2 * np.pi, 32, endpoint=False, dtype=np.float32)
+    dx_f = np.arange((cx1 - local_cx) - 1.0, (cx1 - local_cx) + 1.01, 0.5, dtype=np.float32)
+    dy_f = np.arange((cy1 - local_cy) - 1.0, (cy1 - local_cy) + 1.01, 0.5, dtype=np.float32)
+    dr_f = np.arange((r1 - nom_r) - 1.0, (r1 - nom_r) + 1.01, 0.5, dtype=np.float32)
+    dx_f = dx_f[(dx_f >= -dxy - 0.01) & (dx_f <= dxy + 0.01)]
+    dy_f = dy_f[(dy_f >= -dxy - 0.01) & (dy_f <= dxy + 0.01)]
+    dr_f = dr_f[(dr_f >= -dr - 0.01) & (dr_f <= dr + 0.01)]
+    if dx_f.size == 0:
+        dx_f = np.array([cx1 - local_cx], dtype=np.float32)
+    if dy_f.size == 0:
+        dy_f = np.array([cy1 - local_cy], dtype=np.float32)
+    if dr_f.size == 0:
+        dr_f = np.array([r1 - nom_r], dtype=np.float32)
+
+    return _eval_radial_candidates(
+        gx, gy, g_scale, local_cx, local_cy, nom_r,
+        dx_f, dy_f, dr_f, np.cos(angles_f), np.sin(angles_f),
+        center_penalty_w, r_penalty_w, r_expand_extra_w,
+    )
+
+
+def refine_solder_ball_radial_vectorized(
+    roi: np.ndarray,
+    gx: np.ndarray,
+    gy: np.ndarray,
+    local_cx: float,
+    local_cy: float,
+    nom_r: float,
+    search_dxy: float = 6.0,
+    search_dr: float = 2.5
+) -> tuple[float, float, float]:
+    """
+    基于饱和径向梯度通量与法向一致性的亚像素高鲁棒焊球边缘拟合算法 (兼容旧接口)。
+    """
+    fx, fy, fr, _ = _refine_solder_ball_radial_with_score(
+        roi, gx, gy, local_cx, local_cy, nom_r,
+        search_dxy=search_dxy, search_dr=search_dr,
+    )
+    return fx, fy, fr
+
+
+def _fit_affine_grid_centers(
+    refined_entries: List[dict],
+) -> tuple[dict[int, tuple[float, float]], dict[int, float]]:
+    """
+    按 grid_id 分组，使用 Huber 迭代重加权最小二乘 (IRLS) 拟合 2D 仿射网格映射:
+        (grid_col, grid_row) -> (x_grid, y_grid)
+    兼容芯片轻微旋转与缩放，并自动过滤拟合残差过大的非刚性分组。
+    返回:
+        grid_preds[idx] = (gx, gy)
+        grid_med_r[grid_id] = 该阵列焊球半径中位数
+    """
+    groups: dict[int, list] = {}
+    for idx, entry in enumerate(refined_entries):
+        if entry is None:
+            continue
+        gid = entry.get("grid_id")
+        gr = entry.get("grid_row")
+        gc = entry.get("grid_col")
+        if gid is None or gr is None or gc is None:
+            continue
+        groups.setdefault(int(gid), []).append(
+            (idx, float(gc), float(gr), float(entry["fx"]), float(entry["fy"]), float(entry["fr"]))
+        )
+
+    grid_preds: dict[int, tuple[float, float]] = {}
+    grid_med_r: dict[int, float] = {}
+
+    for gid, pts in groups.items():
+        if len(pts) < 6:
+            continue
+        A = np.array([[c, r, 1.0] for _, c, r, _, _, _ in pts], dtype=np.float64)
+        bx = np.array([x for _, _, _, x, _, _ in pts], dtype=np.float64)
+        by = np.array([y for _, _, _, _, y, _ in pts], dtype=np.float64)
+
+        w = np.ones(len(pts), dtype=np.float64)
+        coef_x = np.zeros(3, dtype=np.float64)
+        coef_y = np.zeros(3, dtype=np.float64)
+        med_err = 999.0
+        for _ in range(5):
+            W = np.sqrt(w)[:, None]
+            coef_x, _, _, _ = np.linalg.lstsq(A * W, bx * W[:, 0], rcond=None)
+            coef_y, _, _, _ = np.linalg.lstsq(A * W, by * W[:, 0], rcond=None)
+            err = np.hypot(bx - A @ coef_x, by - A @ coef_y)
+            med_err = float(np.median(err))
+            delta = max(0.8, 1.5 * med_err)
+            w = np.where(err <= delta, 1.0, delta / (err + 1e-6))
+
+        # 仅当该阵列确实符合高刚性规则网格时才启用网格纠偏，避免误伤不规则阵列
+        if med_err > 2.2:
+            continue
+
+        px = A @ coef_x
+        py = A @ coef_y
+        grid_med_r[gid] = float(np.median([r for _, _, _, _, _, r in pts]))
+        for (idx, _, _, _, _, _), gx_val, gy_val in zip(pts, px, py):
+            grid_preds[idx] = (float(gx_val), float(gy_val))
+
+    return grid_preds, grid_med_r
 
 
 # ==============================================================
@@ -389,6 +612,54 @@ def predict_and_generate_mask(
     user_void_offset = kwargs.get('void_thresh_offset')
     void_thresh_offset = float(user_void_offset) if user_void_offset is not None else auto_offset
 
+def _refine_single_solder_geometry(
+    data: dict,
+    gray: np.ndarray,
+    gx_full: np.ndarray,
+    gy_full: np.ndarray,
+    w_img: int,
+    h_img: int,
+    array_nominal_r: float,
+) -> Optional[dict]:
+    """Pass 1: 对单个焊球执行抗背景干扰的粗到精径向边缘拟合"""
+    x_c, y_c, r = float(data.get("center_x", 0)), float(data.get("center_y", 0)), float(data.get("radius", 0))
+
+    draw_r = float(data.get("draw_radius", 0.0) or 0.0)
+    if draw_r > 0 and 0.65 * array_nominal_r <= draw_r <= 1.45 * array_nominal_r:
+        ball_ref_r = draw_r
+    elif 0.65 * array_nominal_r <= r <= 1.45 * array_nominal_r:
+        ball_ref_r = array_nominal_r
+    else:
+        ball_ref_r = r
+
+    pad = int(max(ball_ref_r * 1.5, ball_ref_r + 15))
+    x1 = max(0, int(round(x_c - pad)))
+    y1 = max(0, int(round(y_c - pad)))
+    x2 = min(w_img, int(round(x_c + pad)))
+    y2 = min(h_img, int(round(y_c + pad)))
+    roi = gray[y1:y2, x1:x2]
+    if roi.size == 0:
+        return None
+
+    rgx = gx_full[y1:y2, x1:x2]
+    rgy = gy_full[y1:y2, x1:x2]
+    fx_loc, fy_loc, fr, score = _refine_solder_ball_radial_with_score(
+        roi, rgx, rgy, x_c - x1, y_c - y1, ball_ref_r,
+        search_dxy=max(4.5, min(8.0, ball_ref_r * 0.35)),
+        search_dr=max(2.0, min(4.5, ball_ref_r * 0.15)),
+    )
+    return {
+        "fx": float(fx_loc + x1),
+        "fy": float(fy_loc + y1),
+        "fr": float(fr),
+        "score": float(score),
+        "ball_ref_r": float(ball_ref_r),
+        "grid_id": data.get("grid_id"),
+        "grid_row": data.get("grid_row"),
+        "grid_col": data.get("grid_col"),
+    }
+
+
 def _process_single_solder_ball(
     data: dict,
     gray: np.ndarray,
@@ -399,47 +670,37 @@ def _process_single_solder_ball(
     array_nominal_r: float,
     void_thresh_offset: float,
     min_void_area: float,
+    refined_geom: Optional[dict] = None,
 ) -> Optional[PredictionResult]:
     """处理单个焊球的亚像素边缘精修与气泡高精度提取"""
     conf = float(data.get("conf", 1.0))
-    x_c, y_c, r = float(data.get("center_x", 0)), float(data.get("center_y", 0)), float(data.get("radius", 0))
 
-    # 判断当前焊球基准标称参考半径 (优先使用网格精修的标称半径，其次全局阵列均值)
-    draw_r = float(data.get("draw_radius", 0.0) or 0.0)
-    if draw_r > 0 and 0.65 * array_nominal_r <= draw_r <= 1.45 * array_nominal_r:
-        ball_ref_r = draw_r
-    elif 0.65 * array_nominal_r <= r <= 1.45 * array_nominal_r:
-        ball_ref_r = array_nominal_r
-    else:
-        ball_ref_r = r
+    if refined_geom is None:
+        refined_geom = _refine_single_solder_geometry(
+            data, gray, gx_full, gy_full, w_img, h_img, array_nominal_r
+        )
+        if refined_geom is None:
+            return None
 
-    # 动态裁剪焊点局部 ROI (以当前中心为基准，预留梯度搜索裕量)
-    pad = int(max(ball_ref_r * 1.5, ball_ref_r + 15))
-    x1 = max(0, int(round(x_c - pad)))
-    y1 = max(0, int(round(y_c - pad)))
-    x2 = min(w_img, int(round(x_c + pad)))
-    y2 = min(h_img, int(round(y_c + pad)))
+    fx_abs = float(refined_geom["fx"])
+    fy_abs = float(refined_geom["fy"])
+    fr = float(refined_geom["fr"])
+
+    # 以精修后的焊球中心裁剪 ROI，用于顶帽变换与空洞分割
+    pad = int(max(fr * 1.5, fr + 15))
+    x1 = max(0, int(round(fx_abs - pad)))
+    y1 = max(0, int(round(fy_abs - pad)))
+    x2 = min(w_img, int(round(fx_abs + pad)))
+    y2 = min(h_img, int(round(fy_abs + pad)))
     roi = gray[y1:y2, x1:x2]
-    if roi.size == 0: 
+    if roi.size == 0:
         return None
 
-    rgx = gx_full[y1:y2, x1:x2]
-    rgy = gy_full[y1:y2, x1:x2]
-    local_x_c = x_c - x1
-    local_y_c = y_c - y1
-
-    # 🌟 径向梯度通量精修：高精度自适应拟合每个焊点的亚像素圆心与真实半径
-    fx, fy, fr = refine_solder_ball_radial_vectorized(
-        roi, rgx, rgy, local_x_c, local_y_c, ball_ref_r,
-        search_dxy=max(4.5, min(8.0, ball_ref_r * 0.35)),
-        search_dr=max(2.0, min(4.5, ball_ref_r * 0.15))
-    )
-
-    local_cx = int(round(fx))
-    local_cy = int(round(fy))
+    local_cx = int(round(fx_abs - x1))
+    local_cy = int(round(fy_abs - y1))
     x_c = local_cx + x1
     y_c = local_cy + y1
-    radius = int(round(fr * SOLDER_SHRINK_RATIO))
+    radius = max(1, int(round(fr * SOLDER_SHRINK_RATIO)))
 
     # 顶帽变换消除背景
     tophat_k_size = max(MIN_TOPHAT_KERNEL, int(radius * TOPHAT_KERNEL_RATIO))
@@ -658,10 +919,69 @@ def predict_and_generate_mask(
     user_void_offset = kwargs.get('void_thresh_offset')
     void_thresh_offset = float(user_void_offset) if user_void_offset is not None else auto_offset
 
-    # === 5. 并发执行逐焊球气泡分割流水线 (CPU 多核线程池加速) ===
+    # === 5. 两阶段并发精修 + 气泡分割流水线 (CPU 多核线程池加速) ===
     results: List[PredictionResult] = []
+    max_workers = min(8, os.cpu_count() or 4)
 
-    def _worker(d):
+    def _geom_worker(d):
+        return _refine_single_solder_geometry(
+            data=d,
+            gray=gray,
+            gx_full=gx_full,
+            gy_full=gy_full,
+            w_img=w_img,
+            h_img=h_img,
+            array_nominal_r=array_nominal_r,
+        )
+
+    # Pass 1: 并发执行逐焊球饱和径向梯度边缘精修
+    if len(valid_solders) <= 4:
+        geoms = [_geom_worker(d) for d in valid_solders]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            geoms = list(executor.map(_geom_worker, valid_solders))
+
+    # Pass 2: 刚性 BGA 阵列 2D 仿射网格一致性校验 (仅纠偏受强背景干扰偏离或半径虚胖的焊球)
+    grid_preds, grid_med_r = _fit_affine_grid_centers(geoms)
+    for idx, geom in enumerate(geoms):
+        if geom is None or idx not in grid_preds:
+            continue
+        gid = int(geom["grid_id"])
+        r_med = grid_med_r.get(gid, array_nominal_r)
+        gx_p, gy_p = grid_preds[idx]
+        dev = math.hypot(geom["fx"] - gx_p, geom["fy"] - gy_p)
+        r_oversize = geom["fr"] > r_med * 1.12
+        low_conf_edge = geom["score"] < 0.42 and dev > max(1.8, r_med * 0.10)
+
+        if dev > max(2.5, r_med * 0.16) or r_oversize or low_conf_edge:
+            pad = int(max(r_med * 1.5, r_med + 15))
+            x1 = max(0, int(round(gx_p - pad)))
+            y1 = max(0, int(round(gy_p - pad)))
+            x2 = min(w_img, int(round(gx_p + pad)))
+            y2 = min(h_img, int(round(gy_p + pad)))
+            roi = gray[y1:y2, x1:x2]
+            if roi.size == 0:
+                continue
+            rgx = gx_full[y1:y2, x1:x2]
+            rgy = gy_full[y1:y2, x1:x2]
+            fx2, fy2, fr2, score2 = _refine_solder_ball_radial_with_score(
+                roi, rgx, rgy, gx_p - x1, gy_p - y1, r_med,
+                search_dxy=max(2.0, min(3.5, r_med * 0.16)),
+                search_dr=max(1.5, min(3.0, r_med * 0.14)),
+                center_penalty_w=0.025,
+                r_penalty_w=0.020,
+                r_expand_extra_w=0.045,
+            )
+            geom["fx"] = float(fx2 + x1)
+            geom["fy"] = float(fy2 + y1)
+            geom["fr"] = float(fr2)
+            geom["score"] = float(score2)
+
+    # Pass 3: 并发执行逐焊球气泡分割与空洞率计算
+    def _void_worker(pair):
+        d, g = pair
+        if g is None:
+            return None
         return _process_single_solder_ball(
             data=d,
             gray=gray,
@@ -672,17 +992,18 @@ def predict_and_generate_mask(
             array_nominal_r=array_nominal_r,
             void_thresh_offset=void_thresh_offset,
             min_void_area=min_void_area,
+            refined_geom=g,
         )
 
-    if len(valid_solders) <= 4:
-        for d in valid_solders:
-            item_res = _worker(d)
+    pairs = list(zip(valid_solders, geoms))
+    if len(pairs) <= 4:
+        for pair in pairs:
+            item_res = _void_worker(pair)
             if item_res is not None:
                 results.append(item_res)
     else:
-        max_workers = min(8, os.cpu_count() or 4)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            thread_results = list(executor.map(_worker, valid_solders))
+            thread_results = list(executor.map(_void_worker, pairs))
             results = [r for r in thread_results if r is not None]
 
     # 统一绘制与保存调试图 (若有请求)

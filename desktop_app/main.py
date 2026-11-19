@@ -65,6 +65,16 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# =========================================================================
+# 🌟 静默自检模式: --selftest [--image 路径] [--no-cpu]
+# 不创建任何窗口，直接验证依赖库 / 推理设备 / 模型 / 四条质检流水线 / 报表导出，
+# 结果写入程序目录 selftest_report.txt，退出码 0=通过 1=失败。
+# 必须在导入 PySide6 与创建 QApplication 之前分流，保证「界面起不来也能自检」。
+# =========================================================================
+if "--selftest" in sys.argv:
+    from desktop_app.selftest import run_selftest
+    sys.exit(run_selftest(sys.argv[1:]))
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
@@ -99,7 +109,7 @@ sys.excepthook = _global_exception_handler
 # 🌟 [甲方试用时间限制] - 开发者打包前直接在此修改时间范围即可
 # =========================================================================
 TRIAL_START_TIME = "2026-10-01 00:00:00"   # 试用起始时间
-TRIAL_EXPIRE_TIME = "2027-10-25 23:59:59"  # 试用截止时间 (超期禁止打开)
+TRIAL_EXPIRE_TIME = "2027-01-31 23:59:59"  # 试用截止时间 (超期禁止打开)
 # =========================================================================
 
 
@@ -131,7 +141,7 @@ def main():
         expire_dt = datetime.datetime.strptime(TRIAL_EXPIRE_TIME, "%Y-%m-%d %H:%M:%S")
     except Exception:
         start_dt = datetime.datetime(2026, 10, 1)
-        expire_dt = datetime.datetime(2026, 11, 15, 23, 59, 59)
+        expire_dt = datetime.datetime(2027, 1, 31, 23, 59, 59)
 
     if now < start_dt or now > expire_dt:
         from PySide6.QtWidgets import QMessageBox

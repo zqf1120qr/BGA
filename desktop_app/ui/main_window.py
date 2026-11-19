@@ -67,6 +67,123 @@ from desktop_app.utils.pdf_reporter import (
 from desktop_app.ui.splash_screen import get_app_icon_path
 
 
+class WindowControlButton(QPushButton):
+    """
+    🌟 标题栏窗口控制按钮 (最小化 / 最大化·还原 / 关闭)
+    ---------------------------------------------------------
+    1. 不用系统字体字符 (— □ ❐ ✕) 做图标: 这些字符在不同字体下字宽、字重、
+       基线位置各不相同, 三个按钮放在一起会明显不对齐、大小不一;
+    2. 改为 QPainter 矢量绘制, 线宽统一 1.4px、图标外框统一 10×10、几何中心严格对齐,
+       三个按钮尺寸同为 44×30、圆角 6px, 视觉上完全成套;
+    3. 交互: 悬停/按下绘制浅色底, 关闭按钮悬停转为告警红; 图标颜色随悬停由灰转白。
+    """
+    _KINDS = {"min", "max", "restore", "close"}
+
+    def __init__(self, kind: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._kind = kind if kind in self._KINDS else "max"
+        self._hovered = False
+        self.setFixedSize(44, 30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setObjectName("BtnClose" if self._kind == "close" else "BtnWinCtrl")
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.pressed.connect(self.update)
+        self.released.connect(self.update)
+        self._sync_tooltip()
+
+    # ---------------- 状态 ----------------
+    def _sync_tooltip(self):
+        self.setToolTip({
+            "min": "最小化",
+            "max": "最大化",
+            "restore": "向下还原",
+            "close": "关闭工作站",
+        }.get(self._kind, ""))
+
+    def set_kind(self, kind: str):
+        if kind in self._KINDS and kind != self._kind:
+            self._kind = kind
+            self._sync_tooltip()
+            self.update()
+
+    @property
+    def kind(self) -> str:
+        return self._kind
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    # ---------------- 绘制 ----------------
+    def _bg_for_state(self) -> QColor | None:
+        pressed = self.isDown()
+        active = self._hovered or pressed
+        if self._kind == "close":
+            if pressed:
+                return QColor("#be123c")
+            return QColor("#e11d48") if active else None
+        if pressed:
+            return QColor("#334155")
+        return QColor("#1e293b") if active else None
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        active = self._hovered or self.isDown()
+
+        # 1) 圆角底色 (悬停 / 按下), 三个按钮同一半径与内缩量
+        bg = self._bg_for_state()
+        if bg is not None:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bg)
+            painter.drawRoundedRect(
+                QRectF(0.5, 0.5, self.width() - 1.0, self.height() - 1.0), 6.0, 6.0
+            )
+
+        # 2) 矢量图标: 统一线宽 1.4px, 统一 10×10 视觉外框, 严格几何居中
+        pen = QPen(QColor("#ffffff") if active else QColor("#94a3b8"))
+        pen.setWidthF(1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        half = 5.0  # 图标半幅 -> 统一 10×10 视觉外框
+
+        if self._kind == "min":
+            painter.drawLine(QPointF(cx - half, cy), QPointF(cx + half, cy))
+        elif self._kind == "max":
+            painter.drawRect(QRectF(cx - half, cy - half, half * 2, half * 2))
+        elif self._kind == "restore":
+            # 后方窗口 (右上) 完整方框
+            back_rect = QRectF(cx - 0.5, cy - 5.0, 6.8, 6.8)
+            front_rect = QRectF(cx - 5.0, cy - 1.8, 6.8, 6.8)
+            painter.drawRect(back_rect)
+            # 前方窗口 (左下): 先用底色遮住被压住的部分, 再描边, 避免线条穿插
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bg if bg is not None else QColor("#0b0f19"))
+            painter.drawRect(front_rect.adjusted(0.9, 0.9, -0.9, -0.9))
+            painter.restore()
+            painter.drawRect(front_rect)
+        else:  # close: 略小 (9.6) 以抵消斜线的视觉膨胀感, 与方框视觉等重
+            half_d = 4.8
+            painter.drawLine(QPointF(cx - half_d, cy - half_d), QPointF(cx + half_d, cy + half_d))
+            painter.drawLine(QPointF(cx + half_d, cy - half_d), QPointF(cx - half_d, cy + half_d))
+
+        painter.end()
+
+
 class CustomTitleBar(QFrame):
     """现代化原生无边框窗口自定义标题栏 (支持平滑拖动与双击最大化)"""
     def __init__(self, parent_window: QMainWindow):
@@ -83,27 +200,10 @@ class CustomTitleBar(QFrame):
             QLabel {
                 font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
             }
-            QPushButton {
-                background-color: transparent;
+            QPushButton#BtnWinCtrl, QPushButton#BtnClose {
+                background: transparent;
                 border: none;
-                border-radius: 4px;
-                color: #94a3b8;
-                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-                font-size: 13px;
-                font-weight: bold;
-                width: 38px;
-                height: 28px;
-            }
-            QPushButton:hover {
-                background-color: #1e293b;
-                color: #ffffff;
-                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton#BtnClose:hover {
-                background-color: #e11d48;
-                color: #ffffff;
+                padding: 0px;
             }
         """)
 
@@ -133,34 +233,28 @@ class CustomTitleBar(QFrame):
 
         layout.addStretch()
 
-        # 窗口控制按钮组 (最小化 / 最大化 / 关闭)
-        self.btn_min = QPushButton("—")
+        # 窗口控制按钮组 (最小化 / 最大化·还原 / 关闭) —— 统一的矢量图标, 独立紧凑排布
+        self.btn_min = WindowControlButton("min")
         self.btn_min.setToolTip("最小化")
-        self.btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_min.clicked.connect(self.win.showMinimized)
 
-        self.btn_max = QPushButton("□")
-        self.btn_max.setToolTip("最大化/还原")
-        self.btn_max.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_max = WindowControlButton("max")
         self.btn_max.clicked.connect(self._toggle_maximize)
 
-        self.btn_close = QPushButton("✕")
-        self.btn_close.setObjectName("BtnClose")
-        self.btn_close.setToolTip("关闭工作站")
-        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close = WindowControlButton("close")
         self.btn_close.clicked.connect(self.win.close)
 
-        layout.addWidget(self.btn_min)
-        layout.addWidget(self.btn_max)
-        layout.addWidget(self.btn_close)
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.setContentsMargins(0, 0, 0, 0)
+        ctrl_layout.setSpacing(2)
+        ctrl_layout.addWidget(self.btn_min)
+        ctrl_layout.addWidget(self.btn_max)
+        ctrl_layout.addWidget(self.btn_close)
+        layout.addLayout(ctrl_layout)
 
     def update_max_button(self, is_maximized: bool):
-        if is_maximized:
-            self.btn_max.setText("❐")
-            self.btn_max.setToolTip("向下还原")
-        else:
-            self.btn_max.setText("□")
-            self.btn_max.setToolTip("最大化")
+        # 最大化时切换为「还原」图标, 常规态为「最大化」方框
+        self.btn_max.set_kind("restore" if is_maximized else "max")
 
     def _toggle_maximize(self):
         if self.win.isMaximized():
