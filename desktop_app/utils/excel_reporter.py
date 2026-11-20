@@ -45,13 +45,15 @@ SOLDER_COL_WIDTHS = {
     "C": 15,  # 中心X坐标(px)
     "D": 15,  # 中心Y坐标(px)
     "E": 14,  # 实测半径(px)
-    "F": 14,  # 空洞占比(%)
-    "G": 15,  # 少锡缩减率(%)
-    "H": 14,  # 桥连短路状态
-    "I": 15,  # 识别可靠度(%)
-    "J": 16,  # 单点结论
-    "K": 15,  # 人工复核状态
-    "L": 28,  # 复核说明与时间
+    "F": 15,  # 焊球面积(px²)
+    "G": 15,  # 空洞面积(px²)
+    "H": 14,  # 空洞占比(%)
+    "I": 15,  # 少锡缩减率(%)
+    "J": 14,  # 桥连短路状态
+    "K": 15,  # 识别可靠度(%)
+    "L": 16,  # 单点结论
+    "M": 15,  # 人工复核状态
+    "N": 28,  # 复核说明与时间
 }
 
 
@@ -91,6 +93,7 @@ def _append_solder_records_table(
     """向指定工作表中追加焊点全量明细表 (复用预构建样式对象，零重复实例分配)"""
     headers = [
         "焊球序号", "引脚位号", "中心X坐标(px)", "中心Y坐标(px)", "实测半径(px)",
+        "焊球面积(px²)", "空洞面积(px²)",
         "空洞占比(%)", "少锡缩减率(%)", "桥连短路状态", "识别可靠度(%)",
         "单点结论", "人工复核状态", "复核说明与时间"
     ]
@@ -118,12 +121,16 @@ def _append_solder_records_table(
         rev_status = "已排除误检" if is_rev else "--"
         rev_info = f"{rec.review_reason} ({rec.review_timestamp})" if is_rev else "--"
 
+        solder_area_px = getattr(rec, "solder_area_px", int(round(rec.area)))
+        void_area_px = getattr(rec, "void_area_px", int(round(rec.area * rec.void_rate)))
         row_vals = [
             f"#{rec.index}",
             getattr(rec, "pin_name", "") or f"#{rec.index}",
             round(rec.cx, 1),
             round(rec.cy, 1),
             round(rec.radius, 1),
+            int(solder_area_px),
+            int(void_area_px),
             round(rec.void_rate * 100, 2),
             round(-rec.reduction_percent, 2) if rec.reduction_percent > 0 else 0.0,
             "桥连短路NG" if rec.is_bridge else "正常",

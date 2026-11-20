@@ -7,8 +7,19 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, List, Optional
 import numpy as np
+
+
+def _pin_sort_key(rec: 'SolderBallRecord'):
+    """按 JEDEC/IPC 标准 BGA 位号自然排序 (A1..A9, A10.., B1.., AA1..)，散点按坐标排在末尾"""
+    pin = getattr(rec, "pin_name", "") or ""
+    m = re.fullmatch(r"([A-Za-z]+)(\d+)", pin)
+    if m:
+        letters, num = m.group(1).upper(), int(m.group(2))
+        return (0, len(letters), letters, num, rec.cy, rec.cx)
+    return (1, 0, "", 0, rec.cy, rec.cx)
 
 
 def format_bga_pin_name(row_idx: int, col_idx: int) -> str:
@@ -94,6 +105,8 @@ class SolderBallRecord:
         grid_row: Optional[int] = None,
         grid_col: Optional[int] = None,
         pin_name: str = "",
+        solder_area_px: Optional[int] = None,
+        void_area_px: Optional[int] = None,
     ):
         self.index = index
         self.cx = cx
@@ -106,8 +119,11 @@ class SolderBallRecord:
         self.grid_col = grid_col
         self.pin_name = pin_name or f"#{index}"
 
-        # 虚焊指标
+        # 像素级面积指标 (优先采用后端真实二值掩膜像素计数，保证 void_area_px / solder_area_px == void_rate)
         self.area = math.pi * (radius ** 2)
+        self.solder_area_px = int(solder_area_px) if (solder_area_px is not None and solder_area_px > 0) else int(round(self.area))
+        self.void_area_px = int(void_area_px) if (void_area_px is not None and void_area_px >= 0) else int(round(self.solder_area_px * void_rate))
+        # 虚焊指标
         self.area_ratio = 1.0
         self.reduction_percent = 0.0
         self.is_insufficient = False
@@ -213,6 +229,8 @@ class InspectionSession:
 
             grid_row = item.get("grid_row")
             grid_col = item.get("grid_col")
+            solder_area_px = item.get("solder_area_px")
+            void_area_px = item.get("void_area_px")
             record = SolderBallRecord(
                 index=idx,
                 cx=float(center[0]),
@@ -223,6 +241,8 @@ class InspectionSession:
                 confidence=conf,
                 grid_row=grid_row,
                 grid_col=grid_col,
+                solder_area_px=solder_area_px,
+                void_area_px=void_area_px,
             )
             self.solder_records.append(record)
 
@@ -245,7 +265,7 @@ class InspectionSession:
 
         derive_bga_pin_names(self.solder_records)
 
-        # 2. 关联虚焊缺陷数据
+        # 2. 关联虚焊缺陷数据 (依赖原始检测索引 solder_index，须在按位号重排前完成)
         insufficient_details = result.get("insufficient_details", [])
         for defect in insufficient_details:
             s_idx = defect.get("solder_index", -1)
@@ -254,6 +274,15 @@ class InspectionSession:
                 rec.reduction_percent = float(defect.get("reduction_percent", 0.0))
                 rec.area_ratio = float(defect.get("area_ratio", 1.0))
                 rec.area = float(defect.get("area", rec.area))
+
+        # 2.5 按标准引脚位号自然排序并重新编号 (表格、Excel/PDF 报表自动全局同步有序)
+        if self.solder_records:
+            self.solder_records.sort(key=_pin_sort_key)
+            for new_idx, rec in enumerate(self.solder_records, start=1):
+                old_fallback = f"#{rec.index}"
+                rec.index = new_idx
+                if not rec.pin_name or rec.pin_name == old_fallback:
+                    rec.pin_name = f"#{new_idx}"
 
         # 3. 关联桥连缺陷数据
         self.bridge_defects = result.get("bridge_details", [])

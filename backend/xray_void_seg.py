@@ -815,14 +815,16 @@ def _process_single_solder_ball(
     for vc in current_void_circles:
         local_vx = int(round(vc["center"][0] - x1))
         local_vy = int(round(vc["center"][1] - y1))
-        cv2.circle(clean_void_mask, (local_vx, local_vy), max(1, int(round(vc["radius"]))), 255, thickness=cv2.FILLED)
+        vr_px = max(1, int(round(vc["radius"])))
+        cv2.circle(clean_void_mask, (local_vx, local_vy), vr_px, 255, thickness=cv2.FILLED)
+        vc["area_px"] = round(float(math.pi * (vc["radius"] ** 2)), 1)
 
     clean_void_mask = cv2.bitwise_and(clean_void_mask, solder_mask)
-    s_area = np.count_nonzero(solder_mask)
+    s_area = int(np.count_nonzero(solder_mask))
     if s_area <= 0:
         return None
 
-    v_area = np.count_nonzero(clean_void_mask)
+    v_area = int(np.count_nonzero(clean_void_mask))
     void_rate = float(v_area / s_area)
 
     return {
@@ -830,6 +832,8 @@ def _process_single_solder_ball(
         "solder_circle": {"center": (float(x_c), float(y_c)), "radius": float(radius)},
         "void_circle": current_void_circles,
         "void_rate": void_rate,
+        "solder_area_px": s_area,
+        "void_area_px": v_area,
         "confidence": conf,
         "grid_row": data.get("grid_row"),
         "grid_col": data.get("grid_col"),

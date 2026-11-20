@@ -499,8 +499,8 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(self.panel_result)
         right_layout.addWidget(self.panel_defect_table, stretch=1)
-        right_container.setMinimumWidth(380)
-        right_container.setMaximumWidth(500)
+        right_container.setMinimumWidth(420)
+        right_container.setMaximumWidth(560)
 
         # 将三部分装入 Splitter
         main_splitter.addWidget(left_scroll)
@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
         main_splitter.setStretchFactor(2, 0)
-        main_splitter.setSizes([370, 690, 400])
+        main_splitter.setSizes([370, 650, 440])
 
         root_layout.addWidget(main_splitter, stretch=1)
 

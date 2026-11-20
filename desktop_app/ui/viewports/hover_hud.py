@@ -73,12 +73,16 @@ class HoverHudWidget(QFrame):
         layout.addLayout(header_layout)
 
         # 指标明细项
+        self.lbl_solder_area = QLabel("• 焊球面积: 0 px² (R=0.0 px)")
+        self.lbl_void_area = QLabel("• 空洞面积: 0 px² (0 孔)")
         self.lbl_void = QLabel("• 空洞占比: 0.0%")
         self.lbl_insuff = QLabel("• 少锡缩减率: 0.0%")
         self.lbl_bridge = QLabel("• 桥连短路: 正常")
         self.lbl_coord = QLabel("• 中心坐标: (0, 0)")
         self.lbl_coord.setStyleSheet("color: #64748b; font-size: 10px;")
 
+        layout.addWidget(self.lbl_solder_area)
+        layout.addWidget(self.lbl_void_area)
         layout.addWidget(self.lbl_void)
         layout.addWidget(self.lbl_insuff)
         layout.addWidget(self.lbl_bridge)
@@ -101,6 +105,10 @@ class HoverHudWidget(QFrame):
         is_reviewed: bool = False,
         review_reason: str = "",
         pin_name: str = "",
+        radius: float = 0.0,
+        solder_area_px: int = 0,
+        void_area_px: int = 0,
+        void_count: int = 0,
     ):
         display_title = f"引脚 {pin_name} (#{index})" if pin_name else f"#{index} 号焊球"
         self.lbl_title.setText(display_title)
@@ -136,6 +144,17 @@ class HoverHudWidget(QFrame):
                 padding: 1px 5px;
                 border-radius: 3px;
             """)
+
+        # 像素级面积指标
+        self.lbl_solder_area.setText(
+            f"• 焊球面积: <b style='color:#e2e8f0'>{int(solder_area_px)} px²</b> "
+            f"<span style='color:#94a3b8;font-size:10px;'>(R={radius:.1f} px)</span>"
+        )
+        void_area_color = DefectColors.VOID_NG_HEX if (is_void_ng and not is_reviewed) else DefectColors.VOID_NORMAL_HEX
+        self.lbl_void_area.setText(
+            f"• 空洞面积: <b style='color:{void_area_color}'>{int(void_area_px)} px²</b> "
+            f"<span style='color:#94a3b8;font-size:10px;'>(共 {int(void_count)} 孔)</span>"
+        )
 
         # 空洞指标
         void_color = DefectColors.VOID_NG_HEX if is_void_ng else DefectColors.CONF_HEX

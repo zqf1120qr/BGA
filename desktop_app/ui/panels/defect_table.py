@@ -77,12 +77,13 @@ class DefectTablePanel(QFrame):
         # 2. 表格组件 (支持高对比深金黄底色与亮金黄色文字选中联动)
         self.table = QTableWidget()
         headers = [
-            ("引脚位号", "BGA 阵列标准工业引脚位号 (单击视口定位，双击平滑居中放大聚焦)"),
-            ("空洞占比", "焊球内部空洞面积占焊球总面积的比例"),
-            ("少锡幅度", "相对标准焊球的面积缩减率 (虚焊少锡指标)"),
-            ("桥连短路", "相邻焊球锡膏粘连短路状态与关联焊点"),
-            ("单点结论", "该焊点质量判定结果 (PASS合格 / NG不良 / PASS复核)"),
-            ("人工复核", "点击快速排除算法误检或撤销恢复"),
+            ("位号", "BGA 阵列标准工业引脚位号 (单击视口定位，双击平滑居中放大聚焦)"),
+            ("面积(px²)", "焊球像素面积 / 空洞总像素面积 (单位: px²，悬停查看完整拆解)"),
+            ("空洞率", "焊球内部空洞面积占焊球总面积的比例"),
+            ("少锡", "相对标准焊球的面积缩减率 (虚焊少锡指标)"),
+            ("桥连", "相邻焊球锡膏粘连短路状态与关联焊点"),
+            ("结论", "该焊点质量判定结果 (PASS合格 / NG不良 / PASS复核)"),
+            ("复核", "点击快速排除算法误检或撤销恢复"),
         ]
         self.table.setColumnCount(len(headers))
         for col, (name, tip) in enumerate(headers):
@@ -94,14 +95,17 @@ class DefectTablePanel(QFrame):
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
-        self.table.setColumnWidth(0, 56)   # 引脚位号 (如 A1, B12)
-        self.table.setColumnWidth(1, 52)   # 空洞占比 (xx.x%)
-        self.table.setColumnWidth(2, 52)   # 少锡幅度 (-xx.x%)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 桥连短路 (自适应伸展占满剩余宽度)
-        self.table.setColumnWidth(4, 62)   # 单点结论 (PASS/NG/PASS复核)
-        self.table.setColumnWidth(5, 68)   # 人工复核操作列
+        self.table.setColumnWidth(0, 46)   # 引脚位号 (如 A1, B12)
+        self.table.setColumnWidth(1, 74)   # 焊球/空洞像素面积 (如 908/182)
+        self.table.setColumnWidth(2, 50)   # 空洞占比 (xx.x%)
+        self.table.setColumnWidth(3, 48)   # 少锡幅度 (-xx.x%)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # 桥连短路 (自适应伸展占满剩余宽度)
+        self.table.setColumnWidth(5, 60)   # 单点结论 (PASS/NG/PASS复核)
+        self.table.setColumnWidth(6, 66)   # 人工复核操作列
         self.table.verticalHeader().setVisible(False)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # 常驻垂直滚动条槽位，杜绝切换过滤标签时因滚动条显隐导致“桥连”伸展列宽度跳动
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -166,6 +170,10 @@ class DefectTablePanel(QFrame):
             is_any_reviewed = is_reviewed_pass or (rec.is_bridge_cleared and not rec.final_is_ng)
 
             # 1. 焊点引脚位号
+            solder_area_px = getattr(rec, "solder_area_px", int(round(rec.area)))
+            void_area_px = getattr(rec, "void_area_px", int(round(rec.area * rec.void_rate)))
+            void_cnt = len(rec.void_circles) if rec.void_circles else 0
+
             pin_label = getattr(rec, 'pin_name', '') or f"#{rec.index}"
             item_id = QTableWidgetItem(pin_label)
             item_id.setData(Qt.ItemDataRole.UserRole, rec.index)
@@ -175,15 +183,27 @@ class DefectTablePanel(QFrame):
                 f"• 行列坐标: 行 {getattr(rec, 'grid_row', '--')} / 列 {getattr(rec, 'grid_col', '--')}\n"
                 f"• 中心坐标: ({int(rec.cx)}, {int(rec.cy)})\n"
                 f"• 像素半径: {rec.radius:.1f} px\n"
+                f"• 焊球面积: {solder_area_px} px²  |  空洞面积: {void_area_px} px² ({void_cnt} 孔)\n"
                 f"• 交互操作: 单击联动视口选中，双击平滑居中聚焦，右键弹出复核菜单"
             )
 
-            # 2. 空洞占比
+            # 2. 焊球/空洞像素面积 (px²)
+            item_area = QTableWidgetItem(f"{solder_area_px}/{void_area_px}")
+            item_area.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_area.setForeground(QColor(203, 213, 225))
+            item_area.setToolTip(
+                f"[ 像素级面积实测 (px²) ]\n"
+                f"• 焊球像素面积: {solder_area_px} px² (R={rec.radius:.1f} px)\n"
+                f"• 空洞总像素面积: {void_area_px} px² (共检出 {void_cnt} 处空洞)\n"
+                f"• 空洞面积占比: {rec.void_rate * 100:.2f}%"
+            )
+
+            # 3. 空洞占比
             item_void = QTableWidgetItem(f"{rec.void_rate * 100:.1f}%")
             item_void.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item_void.setToolTip(
                 f"[ 焊点内部空洞占比 ]\n"
-                f"• 当前实测值: {rec.void_rate * 100:.2f}%\n"
+                f"• 当前实测值: {rec.void_rate * 100:.2f}% ({void_area_px} / {solder_area_px} px²)\n"
                 f"• 判定状态: {'空洞占比超标 (NG)' if rec.is_void_ng else '正常合格 (PASS)'}"
             )
 
@@ -284,12 +304,13 @@ class DefectTablePanel(QFrame):
                 item_insuff.setForeground(QColor(148, 163, 184))
 
             self.table.setItem(row, 0, item_id)
-            self.table.setItem(row, 1, item_void)
-            self.table.setItem(row, 2, item_insuff)
-            self.table.setItem(row, 3, item_bridge)
-            self.table.setItem(row, 4, item_status)
+            self.table.setItem(row, 1, item_area)
+            self.table.setItem(row, 2, item_void)
+            self.table.setItem(row, 3, item_insuff)
+            self.table.setItem(row, 4, item_bridge)
+            self.table.setItem(row, 5, item_status)
 
-            # 6. 人工复核快捷操作列 (按需抽查排除误检 / 撤销恢复)
+            # 7. 人工复核快捷操作列 (按需抽查排除误检 / 撤销恢复)
             ball_idx = rec.index
             if rec.final_is_ng:
                 btn_action = QPushButton("排除误检")
@@ -314,7 +335,7 @@ class DefectTablePanel(QFrame):
                 """)
                 btn_action.setToolTip(f"点击一键将焊球 #{ball_idx} 标记为合格 (排除误检)")
                 btn_action.clicked.connect(lambda _, b=ball_idx: self.sig_ball_review_toggled.emit(b))
-                self.table.setCellWidget(row, 5, btn_action)
+                self.table.setCellWidget(row, 6, btn_action)
             elif is_any_reviewed:
                 btn_action = QPushButton("↺ 恢复")
                 btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -338,13 +359,13 @@ class DefectTablePanel(QFrame):
                 """)
                 btn_action.setToolTip(f"点击撤销复核，恢复焊球 #{ball_idx} 系统初始判定")
                 btn_action.clicked.connect(lambda _, b=ball_idx: self.sig_ball_review_toggled.emit(b))
-                self.table.setCellWidget(row, 5, btn_action)
+                self.table.setCellWidget(row, 6, btn_action)
             else:
-                self.table.setCellWidget(row, 5, None)
+                self.table.setCellWidget(row, 6, None)
                 item_dash = QTableWidgetItem("--")
                 item_dash.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 item_dash.setForeground(QColor(71, 85, 105))
-                self.table.setItem(row, 5, item_dash)
+                self.table.setItem(row, 6, item_dash)
 
     def _handle_context_menu(self, pos):
         """表格右键行菜单弹出"""

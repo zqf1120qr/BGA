@@ -506,6 +506,10 @@ class ImageCanvasView(QGraphicsView):
             is_reviewed=is_rev,
             review_reason=rev_reason,
             pin_name=getattr(record, "pin_name", ""),
+            radius=record.radius,
+            solder_area_px=getattr(record, "solder_area_px", int(round(record.area))),
+            void_area_px=getattr(record, "void_area_px", int(round(record.area * record.void_rate))),
+            void_count=len(record.void_circles) if record.void_circles else 0,
         )
         self.hover_hud.show_above_ball(center_view, radius_view, self.viewport().size())
 
